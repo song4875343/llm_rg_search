@@ -1,4 +1,4 @@
-# 建筑规范智能检索系统
+# Agent本地知识库搜索问答
 
 基于 ripgrep 和大语言模型的搜索本地文本的问答工具。
 
@@ -55,17 +55,20 @@ uv pip install openai python-dotenv
 copy .env.example .env
 ```
 
-编辑 `.env` 文件，填入你的 API Key：
+编辑 `.env` 文件，填入你的 ModelScope API Key：
 
 ```env
+# ModelScope API 配置
 MODELSCOPE_API_KEY=your-api-key-here
+
+# 模型配置（可选，默认使用 Kimi-K2.5）
+# MODEL_NAME=moonshotai/Kimi-K2.5
+# MODEL_NAME=Qwen/Qwen3-235B-A22B-Instruct-2507
 ```
 
-可选：修改使用的模型
-
-```env
-MODEL_NAME=moonshotai/Kimi-K2.5
-```
+支持的模型：
+- `moonshotai/Kimi-K2.5`（默认）
+- `Qwen/Qwen3-235B-A22B-Instruct-2507`
 
 ## 使用方法
 
@@ -84,7 +87,6 @@ python rg_search.py
 ```python
 run_spec_query(
     user_question="什么时候需要验算竖向地震",  # 你的问题
-    num_regexes=8,              # 生成正则数量（已废弃，保留兼容）
     context_lines=15,           # 上下文扩展行数
     max_matches_per_file=20     # 每个文件最多匹配数
 )
@@ -164,10 +166,12 @@ run_spec_query(
 
 1. 首次运行会自动创建 `specs/` 文件夹
 2. 确保 `rg.exe` 与脚本在同一目录
-3. API Key 需要有足够的调用额度
-4. 规范文件建议使用 UTF-8 编码
-5. 上下文行数过大会增加 token 消耗
+3. 需要配置 `.env` 文件并填入有效的 ModelScope API Key
+4. API Key 需要有足够的调用额度
+5. 规范文件建议使用 UTF-8 编码
+6. 上下文行数过大会增加 token 消耗
+7. 如果规范文件已经清洗为一行一条的格式，可以将 `context_lines` 设为 0 或 1
 
 ## 许可证
 
-本项目仅供学习和研究使用。
+本项目采用 [Apache License 2.0](LICENSE) 开源协议。
