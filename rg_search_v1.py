@@ -4,6 +4,7 @@ import os
 import re
 from openai import OpenAI
 from dotenv import load_dotenv
+import time
 
 # 加载环境变量
 load_dotenv()
@@ -41,6 +42,7 @@ def run_spec_query(
     context_lines: int = 15,     # 参数2：命中行上下扩展的行数
     max_matches_per_file: int = 10 # 参数3：每个规范文件最多抓取多少处（解决内容不全）
     ):
+    t0=time.time()
     # 确保当前目录下有 rg.exe 和 specs 文件夹
     if not os.path.exists("./rg.exe"):
         print("警告：未在当前目录找到 rg.exe，请先下载并放置在此处！")
@@ -92,7 +94,7 @@ def run_spec_query(
     if not combined_regex:
         print("❌ 未能生成有效的正则表达式。")
         return
-        
+    t1=time.time()
     print(f"⚡ 执行极速正则: {combined_regex}")
 
     # ==========================================
@@ -121,7 +123,7 @@ def run_spec_query(
     if not unique_hits:
         print("\n❌ 未能从规范库中检索到相关条款。")
         return
-
+    t2=time.time()
     # ==========================================
     # 第三步：自动展卷（上下文读取）
     # ==========================================
@@ -147,7 +149,7 @@ def run_spec_query(
             continue
 
     final_context = "\n\n================\n\n".join(context_snippets)[:15000] # Qwen 397B 上下文很长，可稍微放宽限制
-
+    t3=time.time()
     # ==========================================
     # 第四步：Qwen 流式阅读并综合回答
     # ==========================================
@@ -178,7 +180,11 @@ def run_spec_query(
         if chunk.choices and chunk.choices[0].delta.content:
             print(chunk.choices[0].delta.content, end='', flush=True)
     print("\n" + "-" * 50)
-
+    t4=time.time()
+    # print(f'第1步{t1-t0}')
+    # print(f'第2步{t2-t1}')
+    # print(f'第3步{t3-t2}')
+    # print(f'第4步{t4-t3}')
 # ==========================================
 # 调试与运行入口
 # ==========================================
