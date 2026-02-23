@@ -16,8 +16,8 @@ def clean_title(title):
     return title.replace('\u2002\u2002', ' ').replace('．', '.')
 
 
-def collect_nested_titles(nodes):
-    """递归收集任意层级目录标题（保序去重）"""
+def collect_nested_titles(nodes, prefix=""):
+    """递归收集任意层级目录标题（保序去重），可附加前缀"""
     titles = []
 
     def walk(node):
@@ -26,7 +26,10 @@ def collect_nested_titles(nodes):
 
         title = node.get('title')
         if isinstance(title, str) and title.strip():
-            titles.append(clean_title(title))
+            t = clean_title(title)
+            if prefix:
+                t = f"{prefix}{t}"
+            titles.append(t)
 
         children = node.get('content')
         if isinstance(children, list):
@@ -59,6 +62,19 @@ def merge_unique(base_list, extra_list):
     return merged
 
 
+def explanation_prefix(occur: int) -> str:
+    """
+    解释目录前缀:
+    occur=2 -> (条文解释)
+    occur>2 -> (条文解释2)、(条文解释3)...
+    """
+    if occur <= 1:
+        return ""
+    if occur == 2:
+        return "(条文解释)"
+    return f"(条文解释{occur - 1})"
+
+
 def parse_js_file(input_path):
     """解析JS文件内容"""
     with open(input_path, 'r', encoding='utf-8') as f:
@@ -89,15 +105,11 @@ def simplify_structure(data):
             chapter_seen_count[chapter_title] = occur
 
             # 同名章节第2次及以后视为条文解释目录，避免覆盖
-            if occur == 1:
-                chapter_key = chapter_title
-            elif occur == 2:
-                chapter_key = f"{chapter_title}（条文解释）"
-            else:
-                chapter_key = f"{chapter_title}（条文解释{occur - 1}）"
+            chapter_prefix = explanation_prefix(occur)
+            chapter_key = f"{chapter_prefix}{chapter_title}" if chapter_prefix else chapter_title
 
             # 递归获取小节列表（包含深层目录）
-            sections = collect_nested_titles(chapter.get('content', []))
+            sections = collect_nested_titles(chapter.get('content', []), chapter_prefix)
 
             if chapter_key in result[book_title]:
                 result[book_title][chapter_key] = merge_unique(
@@ -161,7 +173,9 @@ def main():
         sys.exit(1)
 
     convert_js_to_json(input_path, output_path)
-
+def tt():
+    convert_js_to_json('gf_结构规范(笔记本).js')
 
 if __name__ == '__main__':
-    main()
+    # main()
+    tt()

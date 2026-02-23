@@ -19,9 +19,9 @@ client = OpenAI(
 # 快慢模型分离
 # FAST_MODEL = 'Qwen/Qwen3-30B-A3B-Instruct-2507'     # 用于极速查阅目录，做路由
 FAST_MODEL ='Qwen/Qwen3-235B-A22B-Instruct-2507'
-# REASONING_MODEL = 'moonshotai/Kimi-K2.5'           # 用于最终阅读原文并综合推理
-REASONING_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct-2507'
-MAX_ROUTE_TARGETS = 5
+REASONING_MODEL = 'moonshotai/Kimi-K2.5'           # 用于最终阅读原文并综合推理
+# REASONING_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct-2507'
+MAX_ROUTE_TARGETS = 8
 MAX_EXPANDED_TARGETS = 10
 MAX_SECTION_CHARS = 5000
 MAX_TOTAL_CONTEXT_CHARS = 18000
@@ -70,7 +70,9 @@ def normalize_for_match(text: str) -> str:
 def extract_section_number(title: str) -> str:
     """提取章节数字编号，如 '6.3' 或 '3'"""
     normalized = normalize_for_match(title)
-    match = re.match(r'^(\d+(?:\.\d+)*)', normalized)
+    # 兼容前缀样式: (条文解释)6.3 ...
+    normalized = re.sub(r'^[\(（]条文解释\d*[\)）]', '', normalized).strip()
+    match = re.search(r'(\d+(?:\.\d+)*)', normalized)
     return match.group(1) if match else ""
 
 def flatten_book_toc(book_toc: dict) -> list:
@@ -168,23 +170,24 @@ def normalize_route_targets(route_info, menu_toc: dict) -> list:
     return normalized_targets
 
 def is_explanation_section(section: str) -> bool:
-    """判断是否为条文解释章节"""
-    return bool(re.search(r'[\(（]条文解释\d*[\)）]$', section.strip()))
+    """判断是否为条文解释章节（前缀样式）"""
+    return bool(re.match(r'^\s*[\(（]条文解释\d*[\)）]', section.strip()))
 
-def strip_explanation_suffix(section: str) -> str:
-    """去除章节末尾的条文解释后缀"""
-    return re.sub(r'[\(（]条文解释\d*[\)）]$', '', section).strip()
+def strip_explanation_prefix(section: str) -> str:
+    """去除章节前缀的条文解释标记"""
+    return re.sub(r'^\s*[\(（]条文解释\d*[\)）]\s*', '', section).strip()
 
 def find_explanation_for_base(base_section: str, sections: list) -> str:
     """从同一本目录中找到 base_section 对应的条文解释章节"""
-    exact = f"{base_section}（条文解释）"
-    if exact in sections:
-        return exact
+    exact_candidates = [f"(条文解释){base_section}"]
+    for exact in exact_candidates:
+        if exact in sections:
+            return exact
 
     for section in sections:
         if not is_explanation_section(section):
             continue
-        if strip_explanation_suffix(section) == base_section:
+        if strip_explanation_prefix(section) == base_section:
             return section
 
     return ""
@@ -221,7 +224,7 @@ def expand_targets_with_explanations(route_targets: list, menu_toc: dict) -> lis
             continue
 
         if is_explanation_section(section):
-            base = strip_explanation_suffix(section)
+            base = strip_explanation_prefix(section)
             if base in sections:
                 append_target(book, base)
             else:
@@ -324,12 +327,26 @@ def extract_block_from_file(filepath: str, start_title: str, end_title: str) -> 
 
         start_regex = re.compile(rf'^{re.escape(start_num)}(?:\.|[^0-9]|$)')
         end_regex = re.compile(rf'^{re.escape(end_num)}(?:\.|[^0-9]|$)')
+        start_explain_regex = re.compile(rf'条文解释[^\d]*{re.escape(start_num)}(?:\.|[^0-9]|$)')
+        end_explain_regex = re.compile(rf'条文解释[^\d]*{re.escape(end_num)}(?:\.|[^0-9]|$)')
+        explanation_mode = is_explanation_section(start_title)
 
         start_idx = -1
         end_idx = -1
 
         for idx, line in enumerate(lines):
             line_norm = normalize_for_match(line)
+            line_has_explain = "条文解释" in line_norm
+
+            if explanation_mode:
+                if start_idx == -1 and line_has_explain and start_explain_regex.search(line_norm):
+                    start_idx = idx
+                    continue
+
+                if start_idx != -1 and idx > start_idx and line_has_explain and end_explain_regex.search(line_norm):
+                    end_idx = idx
+                    break
+                continue
 
             if start_idx == -1 and start_regex.search(line_norm):
                 start_idx = idx
@@ -382,7 +399,7 @@ def run_agentic_search(user_question: str):
     请你分析用户问题，从上述目录树中挑选出【最有可能包含答案的多个规范章节】。
     场景里可能是基础规范与专业规范共同给出约束，所以不要只选一个。
     重要：优先返回“正文章节 + 对应条文解释章节”的配对。
-    如果你选了某个正文章节，且目录里存在“同名（条文解释）”，请一并返回该条文解释章节；
+    如果你选了某个正文章节，且目录里存在“(条文解释)同名章节”，请一并返回该条文解释章节；
     如果你选了条文解释章节，也请把对应正文章节一并返回。
     必须原样抄写 JSON 目录里的 key。
     
@@ -390,9 +407,9 @@ def run_agentic_search(user_question: str):
     {{
       "targets": [
         {{"book": "建筑与市政地基基础通用规范", "section": "6.3 筏形基础设计"}},
-        {{"book": "建筑与市政地基基础通用规范", "section": "6.3 筏形基础设计（条文解释）"}},
+        {{"book": "建筑与市政地基基础通用规范", "section": "(条文解释)6.3 筏形基础设计"}},
         {{"book": "3建筑地基基础设计规范[附条文说明]", "section": "8.4高层建筑筏形基础"}},
-        {{"book": "3建筑地基基础设计规范[附条文说明]", "section": "8.4高层建筑筏形基础（条文解释）"}}
+        {{"book": "3建筑地基基础设计规范[附条文说明]", "section": "(条文解释)8.4高层建筑筏形基础"}}
       ]
     }}
     要求：
@@ -517,4 +534,4 @@ def run_agentic_search(user_question: str):
 # 运行入口
 # ==========================================
 if __name__ == "__main__":
-    run_agentic_search("筏板的最小厚度")
+    run_agentic_search("我想知道砌体规范(条文解释)4.1.6的内容")
