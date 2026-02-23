@@ -105,15 +105,16 @@ def run_spec_query(
     user_question: str, 
     reg_num=3,    
     context_lines: int = 15,     
-    max_matches_per_file: int = 20 
+    max_matches_per_file: int = 20,
+    target_folder='./specs/'
     ):
     
     # 确保当前目录下有 rg.exe 和 specs 文件夹
     if not os.path.exists("./rg.exe"):
         print("警告：未在当前目录找到 rg.exe，请先下载并放置在此处！")
     
-    if not os.path.exists("./specs/"):
-        os.makedirs("./specs/")
+    if not os.path.exists(target_folder):
+        os.makedirs(target_folder)
         print("提示：已自动创建 ./specs/ 文件夹，请把 Markdown 规范放入其中。")
 
     print(f"\n用户的问题：{user_question}")
@@ -135,7 +136,7 @@ def run_spec_query(
     # ==========================================
     raw_hits = {} # 使用字典去重，key="filepath|line_num", value="该行文本"
     rg_executable = os.path.join(os.path.dirname(__file__), "rg.exe")
-    spec_dir = "./specs/" 
+    spec_dir =  target_folder
 
     cmd = [rg_executable, "-n", "-i", "-m", str(max_matches_per_file), "-e", combined_regex, spec_dir]
     
