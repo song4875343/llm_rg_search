@@ -58,6 +58,7 @@ class ContextWindow:
     def __init__(self):
         self.segments = {} # key: "filepath|start_line-end_line", value: text
         self.history_queries = set() # 记录搜过的正则，防死循环
+        self.processed_anchors = set() # 记录已处理的锚点 (filepath, line_num)，防重复展卷
         
     def add(self, filepath: str, start_line: int, end_line: int, text: str):
         key = f"{filepath}|{start_line}-{end_line}"
@@ -148,13 +149,37 @@ class DocAgenticSearch:
                         pass
         return raw_hits
 
-    def _filter_and_expand(self, user_question: str, raw_hits: List[Dict], context: ContextWindow):
-        """用快模型粗筛，并使用智能展卷录入全局记忆"""
+    def _filter_and_expand(self, user_question: str, raw_hits: List[Dict], context: ContextWindow) -> bool:
+        """用快模型粗筛，并使用智能展卷录入全局记忆
+        
+        Returns:
+            bool: True 表示有新内容加入上下文，False 表示无新内容
+        """
         if not raw_hits:
-            return
+            return False
+        
+        # 第一步：去重已处理过的锚点
+        new_hits = []
+        skipped_count = 0
+        for hit in raw_hits:
+            anchor_key = (hit['filepath'], hit['line_num'])
+            if anchor_key not in context.processed_anchors:
+                new_hits.append(hit)
+                context.processed_anchors.add(anchor_key)  # 立即标记为已处理
+            else:
+                skipped_count += 1
+        
+        if skipped_count > 0:
+            print(f"   -> ⏭️  过滤掉 {skipped_count} 个重复锚点")
+        
+        if not new_hits:
+            print("   -> ⚠️  所有锚点均已在之前轮次处理过，跳过本轮")
+            return False
+        
+        print(f"   -> 🆕 剩余 {len(new_hits)} 个新锚点待处理")
             
-        # 构造摘要给大模型（取前100条，每条预览1000字符）
-        hits_summary =[f"ID:{i} | 文件:{os.path.basename(h['filepath'])} | 行号:{h['line_num']} | 文本:{h['text'][:1000]}" for i, h in enumerate(raw_hits[:100])]
+        # 第二步：构造摘要给大模型（使用过滤后的 new_hits）
+        hits_summary =[f"ID:{i} | 文件:{os.path.basename(h['filepath'])} | 行号:{h['line_num']} | 文本:{h['text'][:1000]}" for i, h in enumerate(new_hits[:50])]
         summary_text = "\n".join(hits_summary)
         
         prompt = f"""用户问题："{user_question}"\n以下是搜索命中行。请挑选出最相关的 3 到 5 个条目的 ID。\n{summary_text}\n请仅返回 JSON：{{"selected_ids": [0, 2]}}"""
@@ -165,18 +190,18 @@ class DocAgenticSearch:
             temperature=0.1
         )
         selected_ids = extract_json_from_text(response.choices[0].message.content).get("selected_ids", [])
-        valid_ids =[i for i in selected_ids if isinstance(i, int) and 0 <= i < len(raw_hits)]
-        if not valid_ids: valid_ids = list(range(min(3, len(raw_hits))))
+        valid_ids =[i for i in selected_ids if isinstance(i, int) and 0 <= i < len(new_hits)]
+        if not valid_ids: valid_ids = list(range(min(3, len(new_hits))))
         
         # 显示初筛结果
         print(f"   -> 📌 初筛选中 {len(valid_ids)} 条锚点：")
         for idx in valid_ids:
-            hit = raw_hits[idx]
+            hit = new_hits[idx]
             print(f"      ID:{idx} | {os.path.basename(hit['filepath'])}:{hit['line_num']} | {hit['text'][:80]}...")
         
         # 使用智能展卷并加入上下文
         for idx in valid_ids:
-            hit = raw_hits[idx]
+            hit = new_hits[idx]
             print(f"\n   🔧 展卷 ID:{idx} [{os.path.basename(hit['filepath'])}:{hit['line_num']}]")
             try:
                 # 调用智能展卷引擎
@@ -212,6 +237,8 @@ class DocAgenticSearch:
             except Exception as e:
                 print(f"      ⚠️ 展卷异常: {e}")
                 continue
+        
+        return True  # 有新内容加入上下文
 
     def _assess_sufficiency(self, user_question: str, context_text: str) -> dict:
         """核心大脑：判断当前收集的规范是否足够回答问题，是否陷入了‘见表格XX’的嵌套引用陷阱"""
@@ -278,7 +305,13 @@ class DocAgenticSearch:
                 continue
                 
             print(f"   -> 🎯 初筛定位 {len(raw_hits)} 处锚点，展卷提取上下文...")
-            self._filter_and_expand(user_question, raw_hits, context_window)
+            has_new_content = self._filter_and_expand(user_question, raw_hits, context_window)
+            
+            # 如果本轮无新内容，跳过评估直接进入下一轮
+            if not has_new_content:
+                missing_info = "上一轮搜索结果全部重复，需要调整搜索策略，使用不同的关键词或更宽泛的表达。"
+                print(f"   -> ⏭️  本轮无新内容，跳过评估，直接进入下一轮")
+                continue
             
             # 3. 智能体反思 (Assessment)
             current_context = context_window.get_all_context()
@@ -341,4 +374,4 @@ if __name__ == "__main__":
         max_iterations=3,   # 最多思考并重搜 3 次
         context_lines=30    # 智能展卷的最大搜索半径
     )
-    agent.run_query("筏板的最小厚度是多少")
+    agent.run_query("揽风绳的设置要求")
