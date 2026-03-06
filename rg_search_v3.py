@@ -214,10 +214,10 @@ class DocAgenticSearch:
         print(f"   -> 🆕 剩余 {len(new_hits)} 个新锚点待处理")
             
         # 第二步：构造摘要给大模型（使用过滤后的 new_hits）
-        hits_summary =[f"ID:{i} | 文件:{os.path.basename(h['filepath'])} | 行号:{h['line_num']} | 文本:{h['text'][:200]}" for i, h in enumerate(new_hits[:100])]
+        hits_summary =[f"ID:{i} | 文件:{os.path.basename(h['filepath'])} | 行号:{h['line_num']} | 文本:{h['text'][:200]}" for i, h in enumerate(new_hits[:50])]
         summary_text = "\n".join(hits_summary)
         
-        prompt = f"""用户问题："{user_question}"\n以下是搜索命中行。请挑选出最相关的 3 到 5 个条目的 ID。\n{summary_text}\n请仅返回 JSON：{{"selected_ids": [0, 2]}}"""
+        prompt = f"""用户问题："{user_question}"\n以下是搜索命中行。请挑选出最相关的 3 到 5 个条目的 ID。\n{summary_text}\n请仅返回 JSON：{{"selected_ids": [0,2,4,20,35]}}"""
         
         response = client.chat.completions.create(
             model=FAST_MODEL, # 粗筛使用快模型即可
@@ -423,4 +423,4 @@ if __name__ == "__main__":
         max_iterations=3,   # 最多思考并重搜 3 次
         context_lines=30    # 智能展卷的最大搜索半径
     )
-    agent.run_query("何时应设置揽风绳")
+    agent.run_query("基础的宽高比如何要求")

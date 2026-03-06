@@ -12,15 +12,19 @@ load_dotenv()
 
 # 初始化 API 客户端
 client = OpenAI(
-    base_url='https://api-inference.modelscope.cn/v1',
+    # base_url='https://api-inference.modelscope.cn/v1',
+    base_url='https://api.moonshot.cn/v1',
     api_key=os.getenv('MODELSCOPE_API_KEY'),
 )
 
 # 快慢模型分离
 # FAST_MODEL = 'Qwen/Qwen3-30B-A3B-Instruct-2507'     # 用于极速查阅目录，做路由
-FAST_MODEL ='Qwen/Qwen3-235B-A22B-Instruct-2507'
-REASONING_MODEL = 'moonshotai/Kimi-K2.5'           # 用于最终阅读原文并综合推理
+# FAST_MODEL ='Qwen/Qwen3-235B-A22B-Instruct-2507'
+# REASONING_MODEL = 'moonshotai/Kimi-K2.5'           # 用于最终阅读原文并综合推理
 # REASONING_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct-2507'
+FAST_MODEL = 'kimi-k2-turbo-preview'     # 速度快，用于生成正则、智能初筛
+REASONING_MODEL = 'kimi-k2-turbo-preview' # 智商高，用于评估上下文、生成最终长答案
+
 MAX_ROUTE_TARGETS = 8
 MAX_EXPANDED_TARGETS = 10
 MAX_SECTION_CHARS = 5000
@@ -534,4 +538,4 @@ def run_agentic_search(user_question: str):
 # 运行入口
 # ==========================================
 if __name__ == "__main__":
-    run_agentic_search("我想知道砌体规范(条文解释)4.1.6的内容")
+    run_agentic_search("基础宽高比的要求")
