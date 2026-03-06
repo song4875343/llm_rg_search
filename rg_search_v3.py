@@ -23,7 +23,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # 初始化 ModelScope 或其他兼容 OpenAI 接口的客户端
 client = OpenAI(
     # base_url='https://api-inference.modelscope.cn/v1',
-    base_url='https://api.deepseek.com',
+    base_url='https://api.moonshot.cn/v1',
     api_key=os.getenv('MODELSCOPE_API_KEY'),
 )
 
@@ -31,10 +31,12 @@ client = OpenAI(
 # 核心配置：快慢模型分离
 # ==========================================
 # FAST_MODEL = 'Qwen/Qwen3-30B-A3B-Instruct-2507'     # 速度快，用于生成正则、智能初筛
+# FAST_MODEL ='Qwen/Qwen3-235B-A22B-Instruct-2507'
 # REASONING_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct-2507' # 智商高，用于评估上下文、生成最终长答案
-# REASONING_MODEL = 'moonshotai/Kimi-K2.5' # 若使用 Kimi，切换此行
-FAST_MODEL = 'deepseek-chat'     # 速度快，用于生成正则、智能初筛
-REASONING_MODEL = 'deepseek-chat' # 智商高，用于评估上下文、生成最终长答案
+# FAST_MODEL ='moonshotai/Kimi-K2.5'
+# REASONING_MODEL = 'moonshotai/Kimi-K2.5' # 若使用 Kimmoonshotai/Kimi-K2.5i，切换此行
+FAST_MODEL = 'kimi-k2-turbo-preview'     # 速度快，用于生成正则、智能初筛
+REASONING_MODEL = 'kimi-k2-turbo-preview' # 智商高，用于评估上下文、生成最终长答案
 
 def extract_json_from_text(text: str) -> dict:
     """提取 JSON，兼容各种模型的乱七八糟输出格式"""
@@ -91,36 +93,68 @@ class DocAgenticSearch:
         if not os.path.exists(self.target_folder):
             os.makedirs(self.target_folder)
 
-    def _generate_regex(self, user_question: str, missing_info: str = "", max_retries: int = 3) -> str:
-        """生成 ripgrep 正则。支持基于 missing_info 进行第二轮策略调整"""
-        
-        # 如果是迭代搜索（有缺失信息），则改变策略重点搜索缺失内容
-        if missing_info:
+    def _generate_regex(self, user_question: str, missing_info: str = "", history_queries: set = None, 
+                        failed_regexes: list = None, is_fallback: bool = False, max_retries: int = 3) -> str:
+        """生成 ripgrep 正则。支持基于 missing_info 或失败回退(is_fallback)进行策略调整
+
+        Args:
+            user_question: 用户原始问题
+            missing_info: 缺失信息描述
+            history_queries: 所有用过的正则（防完全重复）
+            failed_regexes: 失败的正则列表（给 LLM 看）
+            is_fallback: 失败回退标志
+            max_retries: 最大重试次数
+        """
+
+        # 构建失败历史文本
+        failed_text = "、".join(failed_regexes) if failed_regexes else "无"
+
+        # 【失败回退模式】上一轮没搜到结果或全部重复，触发放宽条件
+        if is_fallback:
+            sys_prompt = f"""你是一个规范检索专家。
+
+            【用户问题】：{user_question}
+            【失败反馈】：{missing_info}
+            【已失败的正则（禁止再用相似词汇！）】：{failed_text}
+
+            策略调整要求：
+            1. 彻底放宽条件，只保留1-2个核心名词
+            2. 必须使用同义词或上位词（例如"揽风绳"搜不到，换成"缆风绳|拉索|临时支撑|稳定"）
+            3. 去掉所有限定词（如"设置|要求|规定|数量|位置"等具体属性）
+            4. 可以尝试搜索章节标题或通用术语（如"施工|安全|荷载"）
+
+            生成【一个】极简、宽泛的 ripgrep 正则表达式。
+            务必只返回 JSON：{{"regex": "正则表达式"}}"""
+
+        # 【补充检索模式】有缺失信息，重点搜索缺失内容（查表/条款）
+        elif missing_info:
             sys_prompt = f"""你是一个规范检索专家。当前正在进行【第N轮补充检索】。
             用户原始问题是：{user_question}
             当前我们需要补充查找的【缺失信息】是：{missing_info}
             请针对这部分【缺失信息】（例如特定的表格号、条文号或特定名词），生成【一个】精准的 ripgrep 组合正则表达式。
             注意：如果是查表或条款，直接匹配如 `(表\s*5\.2\.1|5\.2\.1条)` 等。
             务必只返回 JSON：{{"regex": "正则表达式"}}"""
+
+        # 【首次检索模式】默认策略，生成高覆盖率正则
         else:
             sys_prompt = f"""你是一个精通中国建筑/工程/法律规范的顶级检索专家。
             请分析用户的提问，提取核心实体和属性，生成【一个】极高覆盖率的 ripgrep 组合正则表达式。
-            1. 规范黑话转换：用户问“最小”，必须扩充为 `(不应小于|不宜小于|不得大于|≥|mm|m)`。
+            1. 规范黑话转换：用户问"最小"，必须扩充为 `(不应小于|不宜小于|不得大于|≥|mm|m)`。
             2. 同义词扩充：主体必须扩充，如 `(筏板|筏基|底板)`。
             3. 结构：使用 `.*` 连接主体和属性，并用 `|` 并列。
             4. 语法检查：确保所有的圆括号 `()` 必须成对闭合！
             务必只返回 JSON：{{"regex": "正则表达式"}}"""
-            
+
         error_feedback = ""
         for attempt in range(1, max_retries + 1):
             prompt_content = f"用户问题：{user_question}" if not error_feedback else f"语法错误反馈：\n{error_feedback}\n请修复括号等语法问题，重新输出。"
-            
+
             response = client.chat.completions.create(
                 model=FAST_MODEL, # 廉价快模型
                 messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt_content}],
-                temperature=0.2
+                temperature=0.3  # 提高温度给 LLM 更多发散空间找同义词
             )
-            
+
             regex = extract_json_from_text(response.choices[0].message.content).get("regex", "")
             try:
                 re.compile(regex) # 语法校验
@@ -128,6 +162,7 @@ class DocAgenticSearch:
             except re.error as e:
                 error_feedback = f"正则编译失败：{e.msg}。"
         return ""
+
 
     def _execute_rg(self, regex: str) -> List[Dict]:
         """执行 Ripgrep 物理检索"""
@@ -179,7 +214,7 @@ class DocAgenticSearch:
         print(f"   -> 🆕 剩余 {len(new_hits)} 个新锚点待处理")
             
         # 第二步：构造摘要给大模型（使用过滤后的 new_hits）
-        hits_summary =[f"ID:{i} | 文件:{os.path.basename(h['filepath'])} | 行号:{h['line_num']} | 文本:{h['text'][:1000]}" for i, h in enumerate(new_hits[:50])]
+        hits_summary =[f"ID:{i} | 文件:{os.path.basename(h['filepath'])} | 行号:{h['line_num']} | 文本:{h['text'][:200]}" for i, h in enumerate(new_hits[:100])]
         summary_text = "\n".join(hits_summary)
         
         prompt = f"""用户问题："{user_question}"\n以下是搜索命中行。请挑选出最相关的 3 到 5 个条目的 ID。\n{summary_text}\n请仅返回 JSON：{{"selected_ids": [0, 2]}}"""
@@ -280,13 +315,23 @@ class DocAgenticSearch:
         
         context_window = ContextWindow()
         missing_info = ""
+        is_fallback = False  # 失败回退标志
+        failed_regexes = []  # 记录失败的正则
         
         # 核心 Loop
         for iteration in range(1, self.max_iterations + 1):
             print(f"\n🔄[第 {iteration}/{self.max_iterations} 轮迭代] 思考节点启动...")
             
-            # 1. 动态生成/调整策略
-            regex = self._generate_regex(user_question, missing_info)
+            # 1. 动态生成/调整策略（传入失败历史和回退标志）
+            regex = self._generate_regex(
+                user_question, 
+                missing_info, 
+                context_window.history_queries,
+                failed_regexes,
+                is_fallback
+            )
+            is_fallback = False  # 用完立刻重置标志位
+            
             if not regex:
                 print("❌ 无法生成有效的检索条件，中止流程。")
                 break
@@ -300,7 +345,9 @@ class DocAgenticSearch:
             # 2. 检索与展卷
             raw_hits = self._execute_rg(regex)
             if not raw_hits:
-                missing_info = "上一次检索无结果，请彻底改变关键词，去掉过于绝对的词汇，或者尝试使用更宽泛的上级章节名词进行检索。"
+                failed_regexes.append(regex)  # 记录失败的正则
+                is_fallback = True  # 标记下一轮进入失败回退模式
+                missing_info = "上一轮搜索正则太苛刻或词汇不存在，请彻底改变关键词，去掉过于绝对的词汇，换用同义词。"
                 print(f"   -> 📭 未搜到匹配项，已记录反馈，准备下一轮尝试扩搜。")
                 continue
                 
@@ -309,7 +356,9 @@ class DocAgenticSearch:
             
             # 如果本轮无新内容，跳过评估直接进入下一轮
             if not has_new_content:
-                missing_info = "上一轮搜索结果全部重复，需要调整搜索策略，使用不同的关键词或更宽泛的表达。"
+                failed_regexes.append(regex)  # 全部重复也算失败
+                is_fallback = True  # 标记下一轮进入失败回退模式
+                missing_info = "上一轮搜索出的结果已被处理过，陷入死循环，请彻底使用不同的同义词或上位词。"
                 print(f"   -> ⏭️  本轮无新内容，跳过评估，直接进入下一轮")
                 continue
             
@@ -374,4 +423,4 @@ if __name__ == "__main__":
         max_iterations=3,   # 最多思考并重搜 3 次
         context_lines=30    # 智能展卷的最大搜索半径
     )
-    agent.run_query("揽风绳的设置要求")
+    agent.run_query("何时应设置揽风绳")
