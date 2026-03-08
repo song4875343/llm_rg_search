@@ -6,16 +6,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+index=2
 # ================= 配置区 =================
+model_dict={1:{'factory_name':'kimi','base_url':'https://api.moonshot.cn/v1','api_key':'kimi_key','model_name':'kimi-k2-turbo-preview'},
+            2:{'factory_name':'nvidia','base_url':'https://integrate.api.nvidia.com/v1','api_key':'nvidia_key','model_name':'moonshotai/kimi-k2.5'},
+            3:{'factory_name':'modelscope','base_url':'https://api-inference.modelscope.cn/v1','api_key':'modelscope_key','model_name':'Qwen/Qwen3-235B-A22B-Instruct-2507'}
+            }
 CLIENT = OpenAI(
-
-    # base_url='https://api.moonshot.cn/v1',
-    # base_url = "https://integrate.api.nvidia.com/v1",
-    base_url='https://api-inference.modelscope.cn/v1',
-    api_key=os.getenv('MODELSCOPE_API_KEY'),
+    base_url = model_dict[index]['base_url'],
+    api_key=os.getenv(model_dict[index]['api_key']),
 )
-# MODEL_NAME = 'kimi-k2-turbo-preview'
-MODEL_NAME = 'moonshotai/Kimi-K2.5'
+
+MODEL_NAME = model_dict[index]['model_name']
+
 TARGET_FOLDER = './specs/'
 RG_EXE = "rg" # Windows下改为 rg.exe 的绝对路径
 
@@ -232,12 +235,32 @@ def run_agent(user_question: str):
             print(f"\n✅ [最终回答]:\n{msg.content}")
             return
 
-    print("\n⚠️ 超过最大轮数，强制结束。")
+    # ================= 修改开始 =================
+    print("\n⚠️ 超过最大轮数，停止工具调用，强制生成回答...")
+    
+    # 追加一条系统指令，要求模型立刻总结
+    messages.append({
+        "role": "user", 
+        "content": "系统指令：已达到最大搜索尝试次数。请立即停止搜索，根据以上历史信息，对我的问题进行总结回答。如果信息不完整，请基于现有线索进行推断并说明。"
+    })
+
+    try:
+        # 这次调用不传递 tools 参数，强制模型输出纯文本
+        final_response = CLIENT.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            # tools=TOOLS_SCHEMA, # 注释掉工具，防止模型继续调用
+            temperature=0.3
+        )
+        print(f"\n✅ [最终回答 (强制输出)]:\n{final_response.choices[0].message.content}")
+    except Exception as e:
+        print(f"强制回答生成失败: {e}")
+    # ================= 修改结束 =================
 
 if __name__ == "__main__":
     # run_agent("何时需要设置拦风绳")
     # run_agent("门刚的伸缩缝距离")
     # run_agent("筏板的最小厚度")
-    # run_agent("基础的宽高比")
+    run_agent("基础的宽高比")
     # run_agent("各种结构何时不需要计算温度工况")
-    run_agent("钢柱的长细比要求")
+    # run_agent("钢柱的长细比要求")
