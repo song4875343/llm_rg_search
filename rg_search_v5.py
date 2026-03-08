@@ -17,10 +17,11 @@ kimi-k2.5
 
 modelscope
 Qwen/Qwen3-235B-A22B-Instruct-2507
+Qwen/Qwen3.5-122B-A10B
 moonshotai/Kimi-K2.5
 总的来讲qwen的或者原生的都行，英伟达的不太好
 '''
-index=3
+index=2
 # ================= 配置区 =================
 model_dict={1:{'factory_name':'kimi','base_url':'https://api.moonshot.cn/v1','api_key':'kimi_key','model_name':'kimi-k2.5'},
             2:{'factory_name':'nvidia','base_url':'https://integrate.api.nvidia.com/v1','api_key':'nvidia_key','model_name':'moonshotai/kimi-k2.5'},
@@ -190,7 +191,7 @@ def run_agent(user_question: str):
     # 使用文件名列表生成提示
     files_str = "\n".join([f"- {f}" for f in ALL_FILES_LIST])
     
-    print(f"🚀 启动 V10 Agent (已加载 {len(ALL_FILES_LIST)} 个文件) | 问题: {user_question}")
+    print(f"🚀 启动 V5 Agent (已加载 {len(ALL_FILES_LIST)} 个文件) | 问题: {user_question}")
     print("=" * 60)
 
     system_prompt = f"""你是一个工程规范检索专家。
@@ -274,7 +275,7 @@ def run_agent(user_question: str):
 if __name__ == "__main__":
     # run_agent("何时需要设置拦风绳")
     # run_agent("门刚的伸缩缝距离")
-    run_agent("筏板的最小厚度")
-    # run_agent("基础的宽高比")
+    # run_agent("筏板的最小厚度")
+    run_agent("基础的宽高比")
     # run_agent("各种结构何时不需要计算温度工况")
     # run_agent("钢柱的长细比要求")
