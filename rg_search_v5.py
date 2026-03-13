@@ -8,7 +8,7 @@ load_dotenv()
 '''
 nvidia model 不如原生的好
 qwen/qwen3.5-122b-a10b 调用工具经常没调用就退出
-minimaxai/minimax-m2.5 正则搜索词经常用空格连接导致0返回
+minimaxai/minimax-m2.5 可以比较慢，有时弄得关键词正则不太行导致返回0行，但是好像不太影响，还行，就是慢
 moonshotai/kimi-k2.5 调用工具经常没调用就退出
 
 kimi模型
@@ -24,8 +24,8 @@ moonshotai/Kimi-K2.5
 index=2
 # ================= 配置区 =================
 model_dict={1:{'factory_name':'kimi','base_url':'https://api.moonshot.cn/v1','api_key':'kimi_key','model_name':'kimi-k2.5'},
-            2:{'factory_name':'nvidia','base_url':'https://integrate.api.nvidia.com/v1','api_key':'nvidia_key','model_name':'moonshotai/kimi-k2.5'},
-            3:{'factory_name':'modelscope','base_url':'https://api-inference.modelscope.cn/v1','api_key':'modelscope_key','model_name':'moonshotai/Kimi-K2.5'}
+            2:{'factory_name':'nvidia','base_url':'https://integrate.api.nvidia.com/v1','api_key':'nvidia_key','model_name':'minimaxai/minimax-m2.5'},
+            3:{'factory_name':'modelscope','base_url':'https://api-inference.modelscope.cn/v1','api_key':'modelscope_key','model_name':'Qwen/Qwen3-235B-A22B-Instruct-2507'}
             }
 CLIENT = OpenAI(
     base_url = model_dict[index]['base_url'],
@@ -276,6 +276,6 @@ if __name__ == "__main__":
     # run_agent("何时需要设置拦风绳")
     # run_agent("门刚的伸缩缝距离")
     # run_agent("筏板的最小厚度")
-    run_agent("基础的宽高比")
-    # run_agent("各种结构何时不需要计算温度工况")
+    # run_agent("基础的宽高比")
+    run_agent("各种结构何时不需要计算温度工况")
     # run_agent("钢柱的长细比要求")
