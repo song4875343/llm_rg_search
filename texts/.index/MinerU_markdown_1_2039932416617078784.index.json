@@ -1,0 +1,48 @@
+{
+  "file_name": "MinerU_markdown_1_2039932416617078784.md",
+  "file_type": "markdown",
+  "file_size": 60756,
+  "modified_time": "2026-04-03T13:09:12.368705",
+  "scan_time": "2026-04-13T17:38:17.836446",
+  "chapters": [
+    {"title": "1 总则", "line": 41},
+    {"title": "2 基本规定", "line": 79,
+      "sections": [
+        {"title": "2.1 规模与布局", "line": 81},
+        {"title": "2.2 建设要求", "line": 115},
+        {"title": "2.3 使用要求", "line": 199}
+      ]},
+    {"title": "3 居住环境", "line": 237,
+      "sections": [
+        {"title": "3.1 空间环境", "line": 239},
+        {"title": "3.2 场 地", "line": 275},
+        {"title": "3.3 配套设施", "line": 341}
+      ]},
+    {"title": "4 建筑空间", "line": 365,
+      "sections": [
+        {"title": "4.1 套内空间", "line": 367},
+        {"title": "4.2 公共空间", "line": 443}
+      ]},
+    {"title": "5 结构", "line": 525},
+    {"title": "6 室内环境", "line": 541,
+      "sections": [
+        {"title": "6.1 声环境", "line": 543},
+        {"title": "6.2 光环境", "line": 565},
+        {"title": "6.3 热环境", "line": 577}
+      ]},
+    {"title": "7 建筑设备", "line": 591,
+      "sections": [
+        {"title": "7.1 给水排水", "line": 593},
+        {"title": "7.2 供暖、通风与空调", "line": 615},
+        {"title": "7.3 燃 气", "line": 635},
+        {"title": "7.4 电 气", "line": 671},
+        {"title": "7.5 智能化", "line": 699}
+      ]}
+  ],
+  "toc": [],
+  "statistics": {
+    "total_chapters": 23,
+    "total_toc_items": 0,
+    "chapter_tree_depth": 2
+  }
+}

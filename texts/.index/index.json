@@ -1,0 +1,139 @@
+{
+  "scan_time": "2026-04-13T17:38:17.827113",
+  "root_folder": "C:\\Users\\GIGABYTE\\Desktop\\源代码成果\\agentic_search\\llm_rg_search\\texts",
+  "recursive": true,
+  "folders": {
+    "root": {
+      "path": "C:\\Users\\GIGABYTE\\Desktop\\源代码成果\\agentic_search\\llm_rg_search\\texts",
+      "files": {
+        "MinerU_markdown_1_2039932416617078784.md": {
+          "name": "MinerU_markdown_1_2039932416617078784.md",
+          "type": "markdown",
+          "size": 60756,
+          "modified": "2026-04-03T13:09:12.368705",
+          "total_chapters": 23,
+          "chapter_summary": [
+            "1 总则",
+            "2 基本规定",
+            "3 居住环境",
+            "4 建筑空间",
+            "5 结构",
+            "6 室内环境",
+            "7 建筑设备"
+          ],
+          "detail_index": "MinerU_markdown_1_2039932416617078784.index.json"
+        },
+        "建筑地基基础设计规范[附条文说明].txt": {
+          "name": "建筑地基基础设计规范[附条文说明].txt",
+          "type": "text",
+          "size": 538295,
+          "modified": "2023-12-22T15:19:59.532134",
+          "total_chapters": 126,
+          "chapter_summary": [
+            "1 总 则",
+            "2 术语和符号",
+            "3 基本规定",
+            "4 地基岩土的分类及工程特性指标",
+            "5 地基计算",
+            "6 山区地基",
+            "7 软弱地基",
+            "8 基 础",
+            "9 基坑工程",
+            "10 检验与监测"
+          ],
+          "detail_index": "建筑地基基础设计规范[附条文说明].index.json"
+        },
+        "混凝土结构设计规范[附条文说明].txt": {
+          "name": "混凝土结构设计规范[附条文说明].txt",
+          "type": "text",
+          "size": 564057,
+          "modified": "2023-12-22T15:19:59.575141",
+          "total_chapters": 222,
+          "chapter_summary": [
+            "1 总 则",
+            "2 术语和符号",
+            "3 基本设计规定",
+            "4 材 料",
+            "5 结构分析",
+            "6 承载能力极限状态计算",
+            "7 正常使用极限状态验算",
+            "8 构造规定",
+            "9 结构构件的基本规定",
+            "10 预应力混凝土结构构件",
+            "... 共 11 章"
+          ],
+          "detail_index": "混凝土结构设计规范[附条文说明].index.json"
+        },
+        "钢结构设计标准[附条文说明].txt": {
+          "name": "钢结构设计标准[附条文说明].txt",
+          "type": "text",
+          "size": 659756,
+          "modified": "2023-12-22T15:19:59.592990",
+          "total_chapters": 257,
+          "chapter_summary": [
+            "1 总 则",
+            "2 术语和符号",
+            "3 基本设计规定",
+            "4 材 料",
+            "5 结构分析与稳定性设计",
+            "6 受弯构件",
+            "7 轴心受力构件",
+            "8 拉弯、压弯构件",
+            "9 加劲钢板剪力墙",
+            "10 塑性及弯矩调幅设计",
+            "... 共 18 章"
+          ],
+          "detail_index": "钢结构设计标准[附条文说明].index.json"
+        },
+        "高层建筑混凝土结构技术规程[附条文说明].txt": {
+          "name": "高层建筑混凝土结构技术规程[附条文说明].txt",
+          "type": "text",
+          "size": 550641,
+          "modified": "2023-12-22T15:19:59.598990",
+          "total_chapters": 222,
+          "chapter_summary": [
+            "1 总 则",
+            "2 术语和符号",
+            "3 结构设计基本规定",
+            "4 荷载和地震作用",
+            "5 结构计算分析",
+            "6 框架结构设计",
+            "7 剪力墙结构设计",
+            "8 框架-剪力墙结构设计",
+            "9 筒体结构设计",
+            "10 复杂高层建筑结构设计",
+            "... 共 13 章"
+          ],
+          "detail_index": "高层建筑混凝土结构技术规程[附条文说明].index.json"
+        },
+        "高层民用建筑钢结构技术规程[附条文说明].txt": {
+          "name": "高层民用建筑钢结构技术规程[附条文说明].txt",
+          "type": "text",
+          "size": 457590,
+          "modified": "2023-12-22T15:19:59.601991",
+          "total_chapters": 168,
+          "chapter_summary": [
+            "1 总 则",
+            "2 术语和符号",
+            "3 结构设计基本规定",
+            "4 材 料",
+            "5 荷载与作用",
+            "6 结构计算分析",
+            "7 钢构件设计",
+            "8 连接设计",
+            "9 制作和涂装",
+            "10 安 装",
+            "... 共 11 章"
+          ],
+          "detail_index": "高层民用建筑钢结构技术规程[附条文说明].index.json"
+        }
+      }
+    }
+  },
+  "summary": {
+    "total_folders": 1,
+    "total_files": 6,
+    "total_chapters": 1018,
+    "index_directory": "C:\\Users\\GIGABYTE\\Desktop\\源代码成果\\agentic_search\\llm_rg_search\\texts\\.index"
+  }
+}
