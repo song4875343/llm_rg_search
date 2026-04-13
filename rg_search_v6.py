@@ -2,6 +2,8 @@ import subprocess
 import json
 import os
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -29,7 +31,7 @@ Qwen/Qwen3.5-122B-A10B
 moonshotai/Kimi-K2.5
 总的来讲qwen的或者原生的都行，英伟达的不太好
 '''
-index=4
+index=1
 # ================= 配置区 =================
 model_dict={1:{'factory_name':'kimi','base_url':'https://api.moonshot.cn/v1','api_key':'kimi_key','model_name':'kimi-k2.5'},
             2:{'factory_name':'nvidia','base_url':'https://integrate.api.nvidia.com/v1','api_key':'nvidia_key','model_name':'minimaxai/minimax-m2.5'},
@@ -102,7 +104,7 @@ def get_document_toc(filename: str) -> str:
     获取指定文档的详细目录结构。
     总览目录已预加载到上下文，此工具只返回某个文件的详细目录 JSON。
     """
-    print(f"\n📑 [Tool: TOC] 获取详细目录: {filename}")
+    print(f"📑 [Tool: TOC] 获取详细目录: {filename}\n")
     ensure_index_exists()
 
     real_path = None
@@ -156,7 +158,7 @@ def execute_grep(pattern: str, include_files: str = None) -> str:
     else:
         cmd.append(str(TARGET_FOLDER))
 
-    print(f"\n🛠️ [Tool: Grep] 搜索: '{pattern}' (范围: {scope_desc})")
+    print(f"🛠️ [Tool: Grep] 搜索: '{pattern}' (范围: {scope_desc})\n")
 
     cmd.extend(["-m", "50"])
 
@@ -181,7 +183,7 @@ def execute_grep(pattern: str, include_files: str = None) -> str:
         return f"系统反馈：搜索出错 {str(e)}"
 
 def read_file_range(filepath: str, start_line: int, end_line: int) -> str:
-    print(f"\n📖 [Tool: Read] 阅读: {os.path.basename(filepath)} (行 {start_line}-{end_line})")
+    print(f"📖 [Tool: Read] 阅读: {os.path.basename(filepath)} (行 {start_line}-{end_line})\n")
     try:
         real_path = filepath
         if not os.path.exists(real_path):
@@ -208,7 +210,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "get_document_toc",
-            "description": "获取指定文档的详细章节目录和精确的位置，一般读取它就能一步获取答案的精确位置。当你已经知道问题在那本书，可以调用它来获取具体章节，返回起始行号用于读取精准的内容。",
+            "description": "获取指定文档的详细章节目录和精确的位置，一般读取它就能一步获取答案的精确位置。你可以根据具体问题调用它来获取具体章节，返回起始行号用于读取精准的内容。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -283,14 +285,15 @@ def run_agent(user_question: str):
 
     MAX_TURNS = 15
     for turn in range(MAX_TURNS):
-        print(f"\n[第 {turn+1} 轮]")
+        print(f"\n\n[第 {turn+1} 轮]")
         try:
             response = get_client().chat.completions.create(
                 model=MODEL_NAME,
                 messages=messages,
                 tools=TOOLS_SCHEMA,
                 tool_choice="auto",
-                temperature=0.1
+                # temperature=0.1
+                temperature=1
             )
         except Exception as e:
             print(f"API Error: {e}")
@@ -298,6 +301,17 @@ def run_agent(user_question: str):
 
         msg = response.choices[0].message
         messages.append(msg)
+
+        #看看思维倒是是什么属性可以用下面（当reasoning_content--kimi，reasoning--minimax，thingking---其他）
+        # try:
+        #     dump_data = msg.model_dump() if hasattr(msg, 'model_dump') else msg.__dict__
+        #     print(f"📦 [Msg Dump]: {json.dumps(dump_data, ensure_ascii=False, default=str)}")
+        # except Exception as e:
+        #     print(f"📦 [Msg Dump Error]: {e}")
+
+        reasoning = getattr(msg, 'reasoning_content', None) or getattr(msg, 'reasoning', None) or getattr(msg, 'thinking', None)
+        if reasoning:
+            print(f"🧠 [LLM 内部思考]:\n{reasoning}")
 
         if msg.tool_calls:
             for tool_call in msg.tool_calls:

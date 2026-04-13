@@ -1,16 +1,16 @@
 {
-  "scan_time": "2026-04-13T17:38:17.827113",
-  "root_folder": "C:\\Users\\GIGABYTE\\Desktop\\源代码成果\\agentic_search\\llm_rg_search\\texts",
+  "scan_time": "2026-04-13T21:21:19.226189",
+  "root_folder": "E:\\desktop\\llm_rg_search\\texts",
   "recursive": true,
   "folders": {
     "root": {
-      "path": "C:\\Users\\GIGABYTE\\Desktop\\源代码成果\\agentic_search\\llm_rg_search\\texts",
+      "path": "E:\\desktop\\llm_rg_search\\texts",
       "files": {
         "MinerU_markdown_1_2039932416617078784.md": {
           "name": "MinerU_markdown_1_2039932416617078784.md",
           "type": "markdown",
-          "size": 60756,
-          "modified": "2026-04-03T13:09:12.368705",
+          "size": 61475,
+          "modified": "2026-04-13T19:02:55.375200",
           "total_chapters": 23,
           "chapter_summary": [
             "1 总则",
@@ -27,7 +27,7 @@
           "name": "建筑地基基础设计规范[附条文说明].txt",
           "type": "text",
           "size": 538295,
-          "modified": "2023-12-22T15:19:59.532134",
+          "modified": "2026-04-13T19:02:55.378200",
           "total_chapters": 126,
           "chapter_summary": [
             "1 总 则",
@@ -47,7 +47,7 @@
           "name": "混凝土结构设计规范[附条文说明].txt",
           "type": "text",
           "size": 564057,
-          "modified": "2023-12-22T15:19:59.575141",
+          "modified": "2026-04-13T19:02:55.381201",
           "total_chapters": 222,
           "chapter_summary": [
             "1 总 则",
@@ -68,7 +68,7 @@
           "name": "钢结构设计标准[附条文说明].txt",
           "type": "text",
           "size": 659756,
-          "modified": "2023-12-22T15:19:59.592990",
+          "modified": "2026-04-13T19:02:55.384200",
           "total_chapters": 257,
           "chapter_summary": [
             "1 总 则",
@@ -89,7 +89,7 @@
           "name": "高层建筑混凝土结构技术规程[附条文说明].txt",
           "type": "text",
           "size": 550641,
-          "modified": "2023-12-22T15:19:59.598990",
+          "modified": "2026-04-13T19:02:55.387255",
           "total_chapters": 222,
           "chapter_summary": [
             "1 总 则",
@@ -110,7 +110,7 @@
           "name": "高层民用建筑钢结构技术规程[附条文说明].txt",
           "type": "text",
           "size": 457590,
-          "modified": "2023-12-22T15:19:59.601991",
+          "modified": "2026-04-13T19:02:55.389482",
           "total_chapters": 168,
           "chapter_summary": [
             "1 总 则",
@@ -134,6 +134,6 @@
     "total_folders": 1,
     "total_files": 6,
     "total_chapters": 1018,
-    "index_directory": "C:\\Users\\GIGABYTE\\Desktop\\源代码成果\\agentic_search\\llm_rg_search\\texts\\.index"
+    "index_directory": "E:\\desktop\\llm_rg_search\\texts\\.index"
   }
 }
