@@ -11,13 +11,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
+num=4 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
     3: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-235B-A22B-Instruct-2507'},
     4: {'base_url': 'https://aigw-jnzs5.cucloud.cn:8443/v1', 'api_key': 'OPENAI_API_KEY', 'model_name': 'MiniMax-M2.5'},
 }
-MODEL_NAME = MODEL_DICT[4]["model_name"]
+MODEL_NAME = MODEL_DICT[num]["model_name"]
 TARGET, INDEX_DIR = SCRIPT_DIR / "texts", SCRIPT_DIR / "texts" / ".index"
 MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (SCRIPT_DIR / "rg.exe").exists() else "rg")
 FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) if (TARGET / f).is_file() and f.endswith((".txt", ".md"))} if TARGET.exists() else {}
@@ -70,10 +71,16 @@ def annotate_grep_output(raw):
         (blocks.append(current), current := []) if line == "--" else current.append(line)
     if current: blocks.append(current)
     
-    annotated = []
+    annotated, ctx_found, ctx_not_found, failed = [], 0, 0, []
     for block in [b for b in blocks if b]:
         fp, ln, ct, fname, ctx = _parse_record_block(block)
-        if ctx: annotated.append(f"[下面内容出自：{fname}-->{ctx.replace('[出自：', '').replace(']', '')}]")
+        if ctx:
+            annotated.append(f"[下面内容出自：{fname}-->{ctx.replace('[出自：', '').replace(']', '')}]")
+            ctx_found += 1
+        elif fp and ln:
+            ctx_not_found += 1
+            if len(failed) < 5: failed.append((fname, ln))
+        
         for line in block:
             if p := _parse_grep_line(line): annotated.append(f"行号{p[1]}-->{p[2]}")
             else:
@@ -89,6 +96,11 @@ def annotate_grep_output(raw):
                     if matched: break
                 if not matched: annotated.append(f"  {line}")
         annotated.append("--")
+    
+    # 打印调试信息
+    print(f"      🔍 [注解] 解析块数: {len([b for b in blocks if b])}, 找到章节: {ctx_found}, 未找到: {ctx_not_found}")
+    if failed: print(f"      ❌ [失败示例前三条]: {', '.join(f'{f}:L{ln}' for f, ln in failed[:3])}")
+    
     return "\n".join(annotated[:-1]) if annotated and annotated[-1] == "--" else "\n".join(annotated)
 
 
@@ -115,14 +127,16 @@ def execute_grep(pattern, include_files=None):
     print(f"🛠️ [Grep] '{pattern}' ({scope})")
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-        if not res.stdout: return "系统反馈：未找到匹配项"
+        if not res.stdout:
+            print(f"   📊 0命中") 
+            return "系统反馈：未找到匹配项"
         
         records, current = [], []
         for line in res.stdout.strip().split("\n"):
             (records.append(current), current := []) if line == "--" else current.append(line)
         if current: records.append(current)
         
-        total_match = sum(1 for r in records for l in r if _parse_grep_line(l))
+        # 去重处理
         new_records, dup_count = [], 0
         for record in records:
             key = next((p[:2] for l in record if (p := _parse_grep_line(l))), None)
@@ -134,11 +148,13 @@ def execute_grep(pattern, include_files=None):
             else:
                 new_records.append(record)
         
-        print(f"   📊 命中: {total_match}, 去重: {dup_count}")
+        print(f"   📊 命中: {len(records)} 条, 去重: {dup_count} 条, 新记录: {len(new_records)} 条")
         if not new_records: return "系统反馈：所有结果已重复"
         
         output_lines = sum([list(r) + ["--"] for r in new_records[:20]], [])[:-1]
-        return f"系统反馈：{len(new_records)} 条新记录:\n{annotate_grep_output(chr(10).join(output_lines))}"
+        annotated = annotate_grep_output(chr(10).join(output_lines))
+        
+        return f"系统反馈：{len(new_records)} 条新记录:\n{annotated}"
     except Exception as e:
         return f"系统反馈：搜索出错 {e}"
 
@@ -161,7 +177,7 @@ TOOLS_SCHEMA = [
 ]
 
 # ==================== Agent 主循环 ====================
-def run_agent(user_question):
+def run_agent(user_question, show_reasoning=False):
     global SEARCH_RESULT_CACHE
     SEARCH_RESULT_CACHE = {}
     print(f"🚀 V7 Agent ({len(FILE_MAP)} 文件) | 问题: {user_question}")
@@ -187,7 +203,9 @@ def run_agent(user_question):
         
         msg = response.choices[0].message
         messages.append(msg)
-        if r := getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None): print(f"🧠 [思考]: {r[:200]}...")
+        if show_reasoning:
+            if r := getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None): 
+                print(f"🧠 [思考]: {r[:200]}...")
         
         if msg.tool_calls:
             for tc in msg.tool_calls:
