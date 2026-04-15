@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
-num=4 #选择的模型序号
+num=1 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
@@ -19,6 +19,7 @@ MODEL_DICT = {
     4: {'base_url': 'https://aigw-jnzs5.cucloud.cn:8443/v1', 'api_key': 'OPENAI_API_KEY', 'model_name': 'MiniMax-M2.5'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
+print(f"🤖 当前使用模型: {MODEL_NAME} (序号: {num})")
 TARGET, INDEX_DIR = SCRIPT_DIR / "texts", SCRIPT_DIR / "texts" / ".index"
 MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (SCRIPT_DIR / "rg.exe").exists() else "rg")
 FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) if (TARGET / f).is_file() and f.endswith((".txt", ".md"))} if TARGET.exists() else {}
@@ -28,7 +29,7 @@ DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE, CLIENT = {}, {}, None
 # ==================== 基础工具函数 ====================
 def get_client():
     global CLIENT
-    if not CLIENT: CLIENT = OpenAI(base_url=MODEL_DICT[4]["base_url"], api_key=os.getenv(MODEL_DICT[4]["api_key"]))
+    if not CLIENT: CLIENT = OpenAI(base_url=MODEL_DICT[num]["base_url"], api_key=os.getenv(MODEL_DICT[num]["api_key"]))
     return CLIENT
 
 def ensure_index_exists():
