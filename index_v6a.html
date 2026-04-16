@@ -50,14 +50,15 @@
             color: var(--ink);
             font-size: 14px;
             line-height: 1.6;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
 
         .page {
             max-width: 1400px;
             margin: 0 auto;
             padding: 40px 40px 20px 40px;
-            height: 100vh;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
@@ -282,7 +283,7 @@
             grid-template-columns: 1fr 1fr;
             gap: 20px;
             flex: 1;
-            min-height: 0;
+            align-items: start;
         }
 
         @media (max-width: 1000px) {
@@ -295,7 +296,7 @@
         .section {
             display: flex;
             flex-direction: column;
-            min-height: 0;
+            min-height: 500px;
         }
 
         .section-header {
@@ -416,7 +417,7 @@
         }
 
         .result-text {
-            font-size: 15px;
+            font-size: 14px;
             white-space: normal;
         }
 
@@ -440,10 +441,10 @@
             margin: 1em 0 0.45em;
         }
 
-        .result-text h1 { font-size: 32px; }
-        .result-text h2 { font-size: 26px; }
-        .result-text h3 { font-size: 22px; }
-        .result-text h4 { font-size: 18px; }
+        .result-text h1 { font-size: 22px; }
+        .result-text h2 { font-size: 18px; }
+        .result-text h3 { font-size: 16px; }
+        .result-text h4 { font-size: 14px; }
 
         .result-text p,
         .result-text ul,
@@ -465,7 +466,7 @@
 
         .result-text code {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.92em;
+            font-size: 13px;
             background: var(--accent-light);
             padding: 0.1em 0.35em;
             border-radius: 3px;
@@ -475,12 +476,14 @@
             background: rgba(0,0,0,0.04);
             padding: 14px 16px;
             overflow-x: auto;
+            font-size: 13px;
         }
 
         .result-text pre code {
             background: none;
             padding: 0;
             border-radius: 0;
+            font-size: 13px;
         }
 
         .result-text blockquote {
@@ -504,13 +507,13 @@
         .result-text table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 14px;
+            font-size: 13px;
         }
 
         .result-text th,
         .result-text td {
             border: 1px solid var(--border);
-            padding: 8px 10px;
+            padding: 6px 8px;
             text-align: left;
             vertical-align: top;
         }
@@ -520,26 +523,10 @@
             font-weight: 600;
         }
 
-        /* Scrollbar */
+        /* Scrollable - 移除固定高度，让内容自然增长 */
         .scrollable {
             flex: 1;
-            overflow-y: auto;
-        }
-
-        .scrollable::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .scrollable::-webkit-scrollbar-track {
-            background: var(--bg-alt);
-        }
-
-        .scrollable::-webkit-scrollbar-thumb {
-            background: var(--border);
-        }
-
-        .scrollable::-webkit-scrollbar-thumb:hover {
-            background: var(--ink-muted);
+            overflow-y: visible;
         }
 
         /* Footer */
@@ -570,7 +557,7 @@
         <!-- Masthead -->
         <header class="masthead">
             <div class="title-block">
-                <h1 class="site-title">fs-explorer</h1>
+                <h1 class="site-title">Fs-AgentSearch</h1>
                 <span class="version">v6a</span>
             </div>
             <div class="status-indicator">
@@ -992,20 +979,6 @@ print(calc_ratio(120, 80))
             }
         }
 
-        function scrollStepsToLatest() {
-            requestAnimationFrame(() => {
-                if (stepsScrollContainer) {
-                    stepsScrollContainer.scrollTop = stepsScrollContainer.scrollHeight;
-                }
-            });
-        }
-
-        function scrollResultToLatest() {
-            requestAnimationFrame(() => {
-                resultContent.scrollTop = resultContent.scrollHeight;
-            });
-        }
-
         // Add turn step
         function addTurnStep(data) {
             // 只在第一次时清空
@@ -1026,7 +999,6 @@ print(calc_ratio(120, 80))
                 </div>
             `;
             stepsList.insertAdjacentHTML('beforeend', html);
-            scrollStepsToLatest();
             console.log('✅ 添加第', data.turn, '轮');
         }
 
@@ -1063,7 +1035,6 @@ print(calc_ratio(120, 80))
                 </div>
             `;
             stepsList.insertAdjacentHTML('beforeend', html);
-            scrollStepsToLatest();
             console.log('✅ 添加工具调用:', data.tool_name);
         }
 
@@ -1096,7 +1067,6 @@ print(calc_ratio(120, 80))
                 </div>
             `;
             stepsList.insertAdjacentHTML('beforeend', html);
-            scrollStepsToLatest();
             console.log('✅ 添加思考步骤');
         }
 
@@ -1104,7 +1074,6 @@ print(calc_ratio(120, 80))
         function showAnswer(data) {
             resultContent.innerHTML = `<div class="result-text">${renderMarkdown(data.content)}</div>`;
             setResultPanelState(false);
-            scrollResultToLatest();
         }
 
         // Show final answer
@@ -1339,19 +1308,17 @@ print(calc_ratio(120, 80))
 
         function typesetResultMath() {
             if (window.MathJax?.typesetPromise) {
-                window.MathJax.typesetPromise([resultContent]).then(() => {
-                    scrollResultToLatest();
-                }).catch((err) => {
+                window.MathJax.typesetPromise([resultContent]).catch((err) => {
                     console.error('MathJax render failed:', err);
                 });
             }
         }
+        
         const originalShowFinalAnswer = showFinalAnswer;
         showFinalAnswer = function(data) {
             originalShowFinalAnswer(data);
             setResultPanelState(true);
             typesetResultMath();
-            scrollResultToLatest();
         };
 
         const originalShowAnswer = showAnswer;
@@ -1364,14 +1331,54 @@ print(calc_ratio(120, 80))
         showError = function(msg) {
             originalShowError(msg);
             setResultPanelState(false);
-            scrollResultToLatest();
         };
 
         const originalUpdateToolResult = updateToolResult;
         updateToolResult = function(data) {
             originalUpdateToolResult(data);
-            scrollStepsToLatest();
         };
+
+        // 同步左右两侧高度
+        function syncSectionHeights() {
+            const sections = document.querySelectorAll('.section');
+            if (sections.length !== 2) return;
+            
+            const leftSection = sections[0];
+            const rightSection = sections[1];
+            
+            // 重置高度
+            leftSection.style.minHeight = '';
+            rightSection.style.minHeight = '';
+            
+            // 获取实际高度
+            const leftHeight = leftSection.offsetHeight;
+            const rightHeight = rightSection.offsetHeight;
+            
+            // 设置为较大的高度
+            const maxHeight = Math.max(leftHeight, rightHeight);
+            leftSection.style.minHeight = maxHeight + 'px';
+            rightSection.style.minHeight = maxHeight + 'px';
+        }
+
+        // 监听内容变化，同步高度
+        const observer = new MutationObserver(() => {
+            requestAnimationFrame(syncSectionHeights);
+        });
+
+        // 观察两个section的变化
+        document.querySelectorAll('.section').forEach(section => {
+            observer.observe(section, {
+                childList: true,
+                subtree: true,
+                characterData: true
+            });
+        });
+
+        // 窗口大小变化时也同步
+        window.addEventListener('resize', syncSectionHeights);
+
+        // 初始同步
+        setTimeout(syncSectionHeights, 100);
 
         // Initialize
         updateStatus('就绪', '');
