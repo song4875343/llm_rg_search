@@ -1155,7 +1155,10 @@ print(calc_ratio(120, 80))
             progressBar.classList.add('active');
             updateStatus('Executing', 'active');
             stepCountEl.textContent = '-';
+            
+            // 清空左侧执行过程和右侧结果
             stepsList.innerHTML = '<div class="empty-state"><div class="prompt">Processing...</div><div class="hint">Loading local demo data</div></div>';
+            ensureStepsFiller();
             resultContent.innerHTML = '<div class="loading-text">Rendering local demo result...</div>';
             setResultPanelState(false);
 
@@ -1189,7 +1192,10 @@ print(calc_ratio(120, 80))
             queryBtn.disabled = true;
             setResultPanelState(false);
 
-            // stepsList.innerHTML = '<div class="empty-state"><div class="prompt">处理中...</div><div class="hint">正在启动查询</div></div>';
+            // 清空左侧执行过程和右侧结果
+            //stepsList.innerHTML = '<div class="empty-state"><div class="prompt">处理中...</div><div class="hint">正在启动查询</div></div>';
+            stepsList.innerHTML = '<div class="empty-state"><div class="prompt"></div><div class="hint"></div></div>';
+            ensureStepsFiller();
             resultContent.innerHTML = '<div class="loading-text">等待结果...</div>';
             progressBar.classList.add('active');
             stepCountEl.textContent = '—';
