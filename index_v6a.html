@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>规范检索助手 - V6A</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']]
+            },
+            svg: {
+                fontCache: 'global'
+            }
+        };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+    <style>
+        :root {
+            --bg: #f4f1eb;
+            --bg-alt: #ebe7df;
+            --ink: #1a1a1a;
+            --ink-light: #4a4a4a;
+            --ink-muted: #8a8a8a;
+            --accent: #c45d3a;
+            --accent-light: #e8d5ce;
+            --success: #2d6a4f;
+            --border: #d4d0c8;
+            --shadow: rgba(0,0,0,0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        ::selection {
+            background: var(--accent);
+            color: var(--bg);
+        }
+
+        body {
+            font-family: 'IBM Plex Mono', monospace;
+            background: var(--bg);
+            color: var(--ink);
+            font-size: 14px;
+            line-height: 1.6;
+            overflow: hidden;
+        }
+
+        .page {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 40px 20px 40px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .masthead {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: none;
+            padding-bottom: 8px;
+            margin-bottom: 0px;
+        }
+
+        .title-block {
+            display: flex;
+            align-items: baseline;
+            gap: 16px;
+        }
+
+        .site-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: 42px;
+            font-weight: 400;
+            letter-spacing: -1px;
+        }
+
+        .version {
+            font-size: 11px;
+            color: var(--ink-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--ink-muted);
+        }
+
+        .status-dot.active {
+            background: var(--success);
+        }
+
+        .status-dot.error {
+            background: var(--accent);
+        }
+
+        /* Query Section */
+        .query-section {
+            margin-bottom: 20px;
+        }
+
+        .query-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+            margin-bottom: 12px;
+        }
+
+        .query-row {
+            display: flex;
+            gap: 0;
+        }
+
+        .query-input {
+            flex: 1;
+            background: var(--bg);
+            border: 2px solid var(--ink);
+            border-right: none;
+            padding: 16px 20px;
+            font-family: inherit;
+            font-size: 16px;
+            color: var(--ink);
+        }
+
+        .query-input:focus {
+            outline: none;
+            background: #fff;
+        }
+
+        .query-input::placeholder {
+            color: var(--ink-muted);
+            font-style: italic;
+        }
+
+        .query-btn {
+            background: var(--ink);
+            color: var(--bg);
+            border: 2px solid var(--ink);
+            padding: 16px 32px;
+            font-family: inherit;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .query-btn:hover:not(:disabled) {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .query-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .folder-btn {
+            background: transparent;
+            border: 1px solid var(--ink);
+            padding: 6px 16px;
+            font-family: inherit;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .folder-btn:hover {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        .search-mode-section {
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .search-mode-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+            white-space: nowrap;
+        }
+
+        .search-mode-options {
+            display: flex;
+            gap: 0;
+            border: 1px solid var(--border);
+        }
+
+        .search-mode-options label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 7px 14px;
+            font-size: 12px;
+            color: var(--ink-light);
+            cursor: pointer;
+            border-right: 1px solid var(--border);
+            transition: all 0.15s;
+            user-select: none;
+        }
+
+        .search-mode-options label:last-child {
+            border-right: none;
+        }
+
+        .search-mode-options label:has(input:checked) {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        .search-mode-options label.disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .search-mode-options label.disabled input {
+            pointer-events: none;
+        }
+
+        .search-mode-options input[type="checkbox"] {
+            display: none;
+        }
+
+        /* Progress */
+        .progress-bar {
+            height: 3px;
+            background: var(--border);
+            margin-top: 0px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .progress-bar.active .progress-fill {
+            animation: indeterminate 1.5s infinite;
+        }
+
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); width: 30%; }
+            50% { width: 50%; }
+            100% { transform: translateX(400%); width: 30%; }
+        }
+
+        /* Main Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        @media (max-width: 1000px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Sections */
+        .section {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1px;
+            margin-bottom: 20px;
+            flex-shrink: 0;
+        }
+
+        .section-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+        }
+
+        .section-meta {
+            font-size: 11px;
+            color: var(--ink-muted);
+        }
+
+        /* Steps */
+        .steps-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-height: 100%;
+        }
+
+        .step {
+            background: var(--bg-alt);
+            border-left: 3px solid var(--ink-muted);
+            padding: 16px 20px;
+            animation: appear 0.2s ease;
+        }
+
+        @keyframes appear {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .step.toc { border-left-color: #0969da; }
+        .step.grep { border-left-color: var(--accent); }
+        .step.read { border-left-color: var(--success); }
+        .step.thinking { border-left-color: #8250df; }
+
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 8px;
+        }
+
+        .step-id {
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .step-tool {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--ink-light);
+        }
+
+        .step-content {
+            font-size: 12px;
+            color: var(--ink-light);
+            line-height: 1.5;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .step-summary {
+            font-size: 12px;
+            color: var(--ink-muted);
+            font-style: italic;
+            margin-top: 8px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            flex: 1;
+            color: var(--ink-muted);
+            text-align: center;
+        }
+
+        .empty-state .prompt {
+            font-family: 'Instrument Serif', serif;
+            font-size: 24px;
+            font-style: italic;
+            margin-bottom: 8px;
+            color: var(--ink-light);
+        }
+
+        .empty-state .hint {
+            font-size: 12px;
+        }
+
+        /* Result */
+        .result-content {
+            line-height: 1.8;
+            padding: 20px;
+            background: var(--bg);
+        }
+
+        .result-content.has-final-result {
+            background: var(--bg-alt);
+        }
+
+        .result-text {
+            font-size: 15px;
+            white-space: normal;
+        }
+
+        .result-text > *:first-child {
+            margin-top: 0;
+        }
+
+        .result-text > *:last-child {
+            margin-bottom: 0;
+        }
+
+        .result-text h1,
+        .result-text h2,
+        .result-text h3,
+        .result-text h4,
+        .result-text h5,
+        .result-text h6 {
+            font-family: 'Instrument Serif', serif;
+            font-weight: 400;
+            line-height: 1.2;
+            margin: 1em 0 0.45em;
+        }
+
+        .result-text h1 { font-size: 32px; }
+        .result-text h2 { font-size: 26px; }
+        .result-text h3 { font-size: 22px; }
+        .result-text h4 { font-size: 18px; }
+
+        .result-text p,
+        .result-text ul,
+        .result-text ol,
+        .result-text blockquote,
+        .result-text pre,
+        .result-text table {
+            margin: 0 0 1em;
+        }
+
+        .result-text ul,
+        .result-text ol {
+            padding-left: 1.4em;
+        }
+
+        .result-text li + li {
+            margin-top: 0.3em;
+        }
+
+        .result-text code {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.92em;
+            background: var(--accent-light);
+            padding: 0.1em 0.35em;
+            border-radius: 3px;
+        }
+
+        .result-text pre {
+            background: rgba(0,0,0,0.04);
+            padding: 14px 16px;
+            overflow-x: auto;
+        }
+
+        .result-text pre code {
+            background: none;
+            padding: 0;
+            border-radius: 0;
+        }
+
+        .result-text blockquote {
+            border-left: 3px solid var(--border);
+            padding-left: 14px;
+            color: var(--ink-light);
+        }
+
+        .result-text a {
+            color: var(--accent);
+            text-decoration: none;
+            border-bottom: 1px solid currentColor;
+        }
+
+        .result-text hr {
+            border: 0;
+            border-top: 1px solid var(--border);
+            margin: 1.2em 0;
+        }
+
+        .result-text table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .result-text th,
+        .result-text td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .result-text th {
+            background: rgba(0,0,0,0.04);
+            font-weight: 600;
+        }
+
+        /* Scrollbar */
+        .scrollable {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .scrollable::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .scrollable::-webkit-scrollbar-track {
+            background: var(--bg-alt);
+        }
+
+        .scrollable::-webkit-scrollbar-thumb {
+            background: var(--border);
+        }
+
+        .scrollable::-webkit-scrollbar-thumb:hover {
+            background: var(--ink-muted);
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 30px;
+            padding-top: 5px;
+            border-top: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--ink-muted);
+            text-align: center;
+        }
+
+        /* Loading */
+        .loading-text {
+            font-style: italic;
+            color: var(--ink-muted);
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <!-- Masthead -->
+        <header class="masthead">
+            <div class="title-block">
+                <h1 class="site-title">fs-explorer</h1>
+                <span class="version">v6a</span>
+            </div>
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Ready</span>
+            </div>
+        </header>
+
+        <!-- (Folder selector removed — Browse/Index moved next to Execute for a simpler UI) -->
+
+        <!-- Query -->
+        <section class="query-section">
+            <div class="query-label">Query</div>
+            <div class="query-row">
+                <input
+                    type="text"
+                    class="query-input"
+                    id="queryInput"
+                    placeholder="扩展基础的宽高比"
+                    autocomplete="off"
+                >
+                <button class="query-btn" id="queryBtn" onclick="startQuery()">
+                    Execute
+                </button>
+                <button class="folder-btn" id="browseBtn" onclick="openFolderPicker()">Browse</button>
+                <button class="folder-btn" id="indexBtn" onclick="openIndexingModal()">Index</button>
+            </div>
+            <div class="search-mode-section" id="searchModeSection">
+                <div class="search-mode-label">Retrieval</div>
+                <div class="search-mode-options">
+                    <label><input type="checkbox" value="agentic" checked disabled><span>Agentic</span></label>
+                    <label class="disabled" id="smSemantic"><input type="checkbox" id="cbSemantic" value="semantic" disabled><span>Semantic</span></label>
+                    <label class="disabled" id="smMetadata"><input type="checkbox" id="cbMetadata" value="metadata" disabled><span>Metadata</span></label>
+                </div>
+            </div>
+        </section>
+
+        <!-- Progress -->
+        <div class="progress-bar" id="progressBar">
+            <div class="progress-fill"></div>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="main-grid">
+            <!-- Steps -->
+            <section class="section">
+                <div class="section-header">
+                    <span class="section-title">执行过程</span>
+                    <span class="section-meta" id="stepCount">—</span>
+                </div>
+                <div class="scrollable">
+                    <div class="steps-list" id="stepsList">
+                        <div class="empty-state">
+                            <div class="prompt">等待查询...</div>
+                            <div class="hint">输入问题后点击执行按钮</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Result -->
+            <section class="section">
+                <div class="section-header">
+                    <span class="section-title">最终回答</span>
+                </div>
+                <div class="result-content scrollable" id="resultContent">
+                    <div class="empty-state">
+                        <div class="prompt">暂无结果</div>
+                        <div class="hint">执行完成后将在此显示答案</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            基于 rg_search_v6a.py · 工程规范智能检索系统 · 使用说明: Browse(选择文件夹) → Index(生成索引) → Execute(执行查询)
+        </footer>
+    </div>
+
+    <!-- 隐藏的文件夹选择器 -->
+    <input type="file" id="folderPicker" webkitdirectory directory multiple style="display: none;">
+    <input type="file" id="indexFolderPicker" webkitdirectory directory multiple style="display: none;">
+
+    <script>
+        // State
+        let ws = null;
+        let stepCount = 0;
+        let isRunning = false;
+        let currentFolderPath = '';
+
+        // Elements
+        const queryInput = document.getElementById('queryInput');
+        const queryBtn = document.getElementById('queryBtn');
+        const stepsList = document.getElementById('stepsList');
+        const stepsScrollContainer = stepsList.closest('.scrollable');
+        const stepCountEl = document.getElementById('stepCount');
+        const resultContent = document.getElementById('resultContent');
+        const progressBar = document.getElementById('progressBar');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const folderPicker = document.getElementById('folderPicker');
+        const indexFolderPicker = document.getElementById('indexFolderPicker');
+
+        document.title = 'fs-explorer';
+
+        // 从文件路径提取文件夹路径
+        function extractFolderPath(files) {
+            if (!files || files.length === 0) return null;
+            
+            // 获取第一个文件的完整路径
+            const firstFile = files[0];
+            const fullPath = firstFile.webkitRelativePath || firstFile.name;
+            
+            // 提取文件夹名称（第一个路径段）
+            const folderName = fullPath.split('/')[0];
+            
+            return folderName;
+        }
+
+        // Browse 按钮处理
+        folderPicker.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            
+            const folderName = extractFolderPath(files);
+            
+            // 过滤出 .txt 和 .md 文件
+            const validFiles = files.filter(f => 
+                f.name.endsWith('.txt') || f.name.endsWith('.md')
+            );
+            
+            if (validFiles.length === 0) {
+                alert('❌ 所选文件夹中没有找到 .txt 或 .md 文件');
+                return;
+            }
+            
+            updateStatus('上传中', 'active');
+            queryBtn.disabled = true;
+            
+            try {
+                // 创建 FormData 上传文件
+                const formData = new FormData();
+                formData.append('folder_name', folderName);
+                
+                for (const file of validFiles) {
+                    formData.append('files', file, file.webkitRelativePath || file.name);
+                }
+                
+                const response = await fetch('/api/upload-folder', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentFolderPath = data.folder_path;
+                    const fileList = data.files.slice(0, 5).join('\n  - ');
+                    const more = data.file_count > 5 ? `\n  ... 还有 ${data.file_count - 5} 个文件` : '';
+                    alert(`✅ ${data.message}\n\n找到 ${data.file_count} 个文件:\n  - ${fileList}${more}`);
+                    updateStatus('就绪', '');
+                    queryBtn.disabled = false;
+                } else {
+                    alert(`❌ ${data.message}`);
+                    updateStatus('错误', 'error');
+                    queryBtn.disabled = false;
+                }
+            } catch (err) {
+                alert(`❌ 上传失败: ${err.message}`);
+                updateStatus('错误', 'error');
+                queryBtn.disabled = false;
+            }
+            
+            // 重置 input
+            e.target.value = '';
+        });
+
+        // Index 按钮处理
+        indexFolderPicker.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            
+            const folderName = extractFolderPath(files);
+            
+            // 过滤出 .txt 和 .md 文件
+            const validFiles = files.filter(f => 
+                f.name.endsWith('.txt') || f.name.endsWith('.md')
+            );
+            
+            if (validFiles.length === 0) {
+                alert('❌ 所选文件夹中没有找到 .txt 或 .md 文件');
+                return;
+            }
+            
+            if (!confirm(`确认要为文件夹 "${folderName}" 生成索引吗？\n\n将处理 ${validFiles.length} 个文件\n索引过程可能需要几分钟`)) {
+                e.target.value = '';
+                return;
+            }
+            
+            updateStatus('索引中', 'active');
+            queryBtn.disabled = true;
+            
+            const startTime = Date.now();
+            
+            try {
+                // 创建 FormData 上传文件
+                const formData = new FormData();
+                formData.append('folder_name', folderName);
+                
+                for (const file of validFiles) {
+                    formData.append('files', file, file.webkitRelativePath || file.name);
+                }
+                
+                const response = await fetch('/api/upload-and-index', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                if (data.success) {
+                    currentFolderPath = data.folder_path;
+                    alert(`✅ ${data.message}\n\n生成了 ${data.index_count} 个索引文件\n耗时: ${elapsed} 秒`);
+                    updateStatus('就绪', '');
+                    queryBtn.disabled = false;
+                } else {
+                    alert(`❌ ${data.message}`);
+                    updateStatus('错误', 'error');
+                    queryBtn.disabled = false;
+                }
+            } catch (err) {
+                alert(`❌ 索引失败: ${err.message}`);
+                updateStatus('错误', 'error');
+                queryBtn.disabled = false;
+            }
+            
+            // 重置 input
+            e.target.value = '';
+        });
+
+        function openFolderPicker() {
+            folderPicker.click();
+        }
+
+        function openIndexingModal() {
+            indexFolderPicker.click();
+        }
+
+        function setResultPanelState(hasFinalResult) {
+            resultContent.classList.toggle('has-final-result', hasFinalResult);
+        }
+
+        const DEMO_RESULT_MARKDOWN = `# Demo Result
+
+这是一个本地 fake 数据示例，用来预览 Markdown、表格和公式渲染效果。
+
+## 结论摘要
+
+- 这一段是无序列表
+- 支持 **粗体**、*斜体*、\`inline code\`
+- 支持 [链接](https://example.com)
+
+## 表格示例
+
+| 项目 | 数值 | 说明 |
+|---|---:|---|
+| 宽度 | 120 | 基础宽度 |
+| 高度 | 80 | 基础高度 |
+| 宽高比 | 1.5 | 120 / 80 |
+
+## 公式示例
+
+行内公式：$a^2 + b^2 = c^2$
+
+块级公式：
+
+$$
+R = \\frac{L}{i}
+$$
+
+再来一个：
+
+$$
+\\bar{x} = \\frac{1}{n}\\sum_{i=1}^{n} x_i
+$$
+
+## 引用
+
+> 这是一个引用块，用来确认 blockquote 样式是否正常。
+
+## 代码块
+
+\`\`\`python
+def calc_ratio(width, height):
+    return width / height
+
+print(calc_ratio(120, 80))
+\`\`\`
+
+## 编号列表
+
+1. 第一项
+2. 第二项
+3. 第三项
+`;
+
+        const DEMO_STEPS = [
+            { type: 'turn', data: { turn: 1 } },
+            { type: 'thinking', data: { content: '先查看目录结构，确认问题涉及的规范章节和公式展示效果。' } },
+            { type: 'tool_call', data: { tool_call_id: 'demo-toc', tool_name: 'get_document_toc', arguments: { filename: 'demo_spec.md' } } },
+            { type: 'tool_result', data: { tool_call_id: 'demo-toc', summary: '已获取目录' } },
+            { type: 'tool_call', data: { tool_call_id: 'demo-grep', tool_name: 'execute_grep', arguments: { pattern: '宽高比', include_files: 'demo_spec.md' } } },
+            { type: 'tool_result', data: { tool_call_id: 'demo-grep', summary: '找到 3 条新记录' } },
+            { type: 'turn', data: { turn: 2 } },
+            { type: 'thinking', data: { content: '整理结果，并用 Markdown、表格、公式生成最终展示。' } },
+        ];
+
+        function runDemoMode() {
+            if (ws) { ws.close(); ws = null; }
+
+            isRunning = true;
+            stepCount = 0;
+            queryBtn.disabled = true;
+            progressBar.classList.add('active');
+            updateStatus('Executing', 'active');
+            stepCountEl.textContent = '-';
+            stepsList.innerHTML = '<div class="empty-state"><div class="prompt">Processing...</div><div class="hint">Loading local demo data</div></div>';
+            resultContent.innerHTML = '<div class="loading-text">Rendering local demo result...</div>';
+            setResultPanelState(false);
+
+            for (const msg of DEMO_STEPS) {
+                handleMessage(msg);
+            }
+
+            handleMessage({ type: 'final_answer', data: { content: DEMO_RESULT_MARKDOWN } });
+            finish();
+        }
+
+        // Enter key
+        queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !isRunning) startQuery();
+        });
+
+        // Start query
+        async function startQuery() {
+            const query = queryInput.value.trim();
+            if (!query || isRunning) return;
+
+            if (query === '/demo') {
+                runDemoMode();
+                return;
+            }
+
+            if (ws) { ws.close(); ws = null; }
+
+            isRunning = true;
+            stepCount = 0;
+            queryBtn.disabled = true;
+            setResultPanelState(false);
+
+            stepsList.innerHTML = '<div class="empty-state"><div class="prompt">处理中...</div><div class="hint">正在启动查询</div></div>';
+            resultContent.innerHTML = '<div class="loading-text">等待结果...</div>';
+            progressBar.classList.add('active');
+            stepCountEl.textContent = '—';
+
+            updateStatus('连接中', 'active');
+
+            // 如果是file://协议，使用localhost:5000
+            const wsUrl = window.location.protocol === 'file:' 
+                ? 'ws://localhost:5000/ws/query'
+                : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/query`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                updateStatus('执行中', 'active');
+                ws.send(JSON.stringify({ question: query }));
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                console.log('📩 收到消息:', msg.type, msg.data);
+                handleMessage(msg);
+            };
+            
+            ws.onerror = () => {
+                showError('连接失败，请确认后端服务是否运行');
+                finish();
+            };
+            
+            ws.onclose = () => finish();
+        }
+
+        // Handle message
+        function handleMessage(msg) {
+            switch (msg.type) {
+                case 'turn':
+                    addTurnStep(msg.data);
+                    break;
+                case 'tool_call':
+                    addToolStep(msg.data);
+                    break;
+                case 'tool_result':
+                    updateToolResult(msg.data);
+                    break;
+                case 'thinking':
+                    addThinkingStep(msg.data);
+                    break;
+                case 'answer':
+                    showAnswer(msg.data);
+                    break;
+                case 'final_answer':
+                    showFinalAnswer(msg.data);
+                    break;
+                case 'error':
+                    showError(msg.data.message);
+                    break;
+            }
+        }
+
+        function scrollStepsToLatest() {
+            requestAnimationFrame(() => {
+                if (stepsScrollContainer) {
+                    stepsScrollContainer.scrollTop = stepsScrollContainer.scrollHeight;
+                }
+            });
+        }
+
+        function scrollResultToLatest() {
+            requestAnimationFrame(() => {
+                resultContent.scrollTop = resultContent.scrollHeight;
+            });
+        }
+
+        // Add turn step
+        function addTurnStep(data) {
+            // 只在第一次时清空
+            const emptyState = stepsList.querySelector('.empty-state');
+            if (emptyState) {
+                stepsList.innerHTML = '';
+            }
+
+            stepCount++;
+            stepCountEl.textContent = `第 ${data.turn} 轮`;
+
+            const html = `
+                <div class="step thinking" id="turn-${data.turn}">
+                    <div class="step-header">
+                        <span class="step-id">第 ${data.turn} 轮</span>
+                        <span class="step-tool">TURN</span>
+                    </div>
+                </div>
+            `;
+            stepsList.insertAdjacentHTML('beforeend', html);
+            scrollStepsToLatest();
+            console.log('✅ 添加第', data.turn, '轮');
+        }
+
+        // Add tool step
+        function addToolStep(data) {
+            // 只在第一次时清空
+            const emptyState = stepsList.querySelector('.empty-state');
+            if (emptyState) {
+                stepsList.innerHTML = '';
+            }
+
+            const toolClass = {
+                'get_document_toc': 'toc',
+                'execute_grep': 'grep',
+                'read_file_range': 'read'
+            }[data.tool_name] || 'thinking';
+
+            const toolLabel = {
+                'get_document_toc': '📑 获取目录',
+                'execute_grep': '🔍 搜索',
+                'read_file_range': '📖 阅读'
+            }[data.tool_name] || data.tool_name;
+
+            const argsDisplay = formatToolArgs(data.tool_name, data.arguments);
+
+            const html = `
+                <div class="step ${toolClass}" id="tool-${data.tool_call_id}">
+                    <div class="step-header">
+                        <span class="step-id">${toolLabel}</span>
+                        <span class="step-tool">${data.tool_name}</span>
+                    </div>
+                    <div class="step-content">${esc(argsDisplay)}</div>
+                    <div class="step-summary">执行中...</div>
+                </div>
+            `;
+            stepsList.insertAdjacentHTML('beforeend', html);
+            scrollStepsToLatest();
+            console.log('✅ 添加工具调用:', data.tool_name);
+        }
+
+        // Update tool result
+        function updateToolResult(data) {
+            const toolEl = document.getElementById(`tool-${data.tool_call_id}`);
+            if (!toolEl) return;
+
+            const summaryEl = toolEl.querySelector('.step-summary');
+            if (summaryEl) {
+                summaryEl.textContent = data.summary || '完成';
+            }
+        }
+
+        // Add thinking step
+        function addThinkingStep(data) {
+            // 只在第一次时清空
+            const emptyState = stepsList.querySelector('.empty-state');
+            if (emptyState) {
+                stepsList.innerHTML = '';
+            }
+
+            const html = `
+                <div class="step thinking">
+                    <div class="step-header">
+                        <span class="step-id">🧠 思考</span>
+                        <span class="step-tool">REASONING</span>
+                    </div>
+                    <div class="step-content">${esc(data.content.substring(0, 200))}${data.content.length > 200 ? '...' : ''}</div>
+                </div>
+            `;
+            stepsList.insertAdjacentHTML('beforeend', html);
+            scrollStepsToLatest();
+            console.log('✅ 添加思考步骤');
+        }
+
+        // Show answer
+        function showAnswer(data) {
+            resultContent.innerHTML = `<div class="result-text">${renderMarkdown(data.content)}</div>`;
+            setResultPanelState(false);
+            scrollResultToLatest();
+        }
+
+        // Show final answer
+        function showFinalAnswer(data) {
+            resultContent.innerHTML = `<div class="result-text">${renderMarkdown(data.content)}</div>`;
+            updateStatus('完成', '');
+        }
+
+        // Show error
+        function showError(msg) {
+            resultContent.innerHTML = `<div class="empty-state"><div class="prompt">错误</div><div class="hint">${esc(msg)}</div></div>`;
+            updateStatus('错误', 'error');
+        }
+
+        // Finish
+        function finish() {
+            isRunning = false;
+            queryBtn.disabled = false;
+            progressBar.classList.remove('active');
+            if (ws) { ws.close(); ws = null; }
+        }
+
+        // Update status
+        function updateStatus(text, state) {
+            statusText.textContent = text;
+            statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+        }
+
+        // Format tool arguments
+        function formatToolArgs(toolName, args) {
+            switch (toolName) {
+                case 'get_document_toc':
+                    return `文件名: ${args.filename}`;
+                case 'execute_grep':
+                    return `搜索词: "${args.pattern}"${args.include_files ? `\n限定文件: ${args.include_files}` : '\n范围: 全库'}`;
+                case 'read_file_range':
+                    return `文件: ${args.filepath}\n行范围: ${args.start_line} - ${args.end_line}`;
+                default:
+                    return JSON.stringify(args, null, 2);
+            }
+        }
+
+        // Escape HTML
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function protectMathSegments(text) {
+            const placeholders = [];
+            const protectedText = text.replace(/\$\$[\s\S]+?\$\$|\$(?:\\.|[^$\n])+\$/g, (match) => {
+                const key = `@@MATH_${placeholders.length}@@`;
+                placeholders.push({ key, value: match });
+                return key;
+            });
+            return { protectedText, placeholders };
+        }
+
+        function restoreMathSegments(text, placeholders) {
+            let restored = text;
+            for (const item of placeholders) {
+                restored = restored.replace(item.key, item.value);
+            }
+            return restored;
+        }
+
+        function renderInlineMarkdown(text) {
+            const { protectedText, placeholders } = protectMathSegments(text);
+            let html = esc(protectedText);
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+            html = html.replace(/(^|[^*\\])_([^_\n]+)_/g, '$1<em>$2</em>');
+            html = html.replace(/\n/g, '<br>');
+            return restoreMathSegments(html, placeholders);
+        }
+
+        function isTableSeparatorLine(line) {
+            const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+            return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+        }
+
+        function splitTableRow(line) {
+            return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+        }
+
+        function renderMarkdown(md) {
+            if (!md) return '';
+
+            const lines = md.replace(/\r\n/g, '\n').split('\n');
+            const html = [];
+            let inCodeBlock = false;
+            let codeLines = [];
+            let listType = null;
+            let paragraph = [];
+
+            function flushParagraph() {
+                if (!paragraph.length) return;
+                html.push(`<p>${renderInlineMarkdown(paragraph.join('\n'))}</p>`);
+                paragraph = [];
+            }
+
+            function flushList() {
+                if (!listType) return;
+                html.push(`</${listType}>`);
+                listType = null;
+            }
+
+            function flushCodeBlock() {
+                if (!inCodeBlock) return;
+                html.push(`<pre><code>${esc(codeLines.join('\n'))}</code></pre>`);
+                inCodeBlock = false;
+                codeLines = [];
+            }
+
+            for (let i = 0; i < lines.length; i += 1) {
+                const line = lines[i];
+                if (line.trim().startsWith('```')) {
+                    flushParagraph();
+                    flushList();
+                    if (inCodeBlock) {
+                        flushCodeBlock();
+                    } else {
+                        inCodeBlock = true;
+                        codeLines = [];
+                    }
+                    continue;
+                }
+
+                if (inCodeBlock) {
+                    codeLines.push(line);
+                    continue;
+                }
+
+                const trimmed = line.trim();
+
+                if (!trimmed) {
+                    flushParagraph();
+                    flushList();
+                    continue;
+                }
+
+                const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
+                if (heading) {
+                    flushParagraph();
+                    flushList();
+                    const level = heading[1].length;
+                    html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+                    continue;
+                }
+
+                const nextLine = lines[i + 1];
+                if (trimmed.includes('|') && nextLine && isTableSeparatorLine(nextLine)) {
+                    flushParagraph();
+                    flushList();
+                    const headerCells = splitTableRow(trimmed);
+                    const bodyRows = [];
+                    let rowIndex = i + 2;
+                    while (rowIndex < lines.length) {
+                        const rowLine = lines[rowIndex].trim();
+                        if (!rowLine || !rowLine.includes('|')) break;
+                        bodyRows.push(splitTableRow(rowLine));
+                        rowIndex += 1;
+                    }
+                    html.push('<table><thead><tr>');
+                    for (const cell of headerCells) {
+                        html.push(`<th>${renderInlineMarkdown(cell)}</th>`);
+                    }
+                    html.push('</tr></thead><tbody>');
+                    for (const row of bodyRows) {
+                        html.push('<tr>');
+                        for (const cell of row) {
+                            html.push(`<td>${renderInlineMarkdown(cell)}</td>`);
+                        }
+                        html.push('</tr>');
+                    }
+                    html.push('</tbody></table>');
+                    i = rowIndex - 1;
+                    continue;
+                }
+
+                if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+                    flushParagraph();
+                    flushList();
+                    html.push('<hr>');
+                    continue;
+                }
+
+                const blockquote = trimmed.match(/^>\s?(.*)$/);
+                if (blockquote) {
+                    flushParagraph();
+                    flushList();
+                    html.push(`<blockquote>${renderInlineMarkdown(blockquote[1])}</blockquote>`);
+                    continue;
+                }
+
+                const unordered = trimmed.match(/^[-*]\s+(.*)$/);
+                if (unordered) {
+                    flushParagraph();
+                    if (listType !== 'ul') {
+                        flushList();
+                        listType = 'ul';
+                        html.push('<ul>');
+                    }
+                    html.push(`<li>${renderInlineMarkdown(unordered[1])}</li>`);
+                    continue;
+                }
+
+                const ordered = trimmed.match(/^\d+\.\s+(.*)$/);
+                if (ordered) {
+                    flushParagraph();
+                    if (listType !== 'ol') {
+                        flushList();
+                        listType = 'ol';
+                        html.push('<ol>');
+                    }
+                    html.push(`<li>${renderInlineMarkdown(ordered[1])}</li>`);
+                    continue;
+                }
+
+                flushList();
+                paragraph.push(trimmed);
+            }
+
+            flushParagraph();
+            flushList();
+            flushCodeBlock();
+            return html.join('');
+        }
+
+        function typesetResultMath() {
+            if (window.MathJax?.typesetPromise) {
+                window.MathJax.typesetPromise([resultContent]).then(() => {
+                    scrollResultToLatest();
+                }).catch((err) => {
+                    console.error('MathJax render failed:', err);
+                });
+            }
+        }
+        const originalShowFinalAnswer = showFinalAnswer;
+        showFinalAnswer = function(data) {
+            originalShowFinalAnswer(data);
+            setResultPanelState(true);
+            typesetResultMath();
+            scrollResultToLatest();
+        };
+
+        const originalShowAnswer = showAnswer;
+        showAnswer = function(data) {
+            originalShowAnswer(data);
+            typesetResultMath();
+        };
+
+        const originalShowError = showError;
+        showError = function(msg) {
+            originalShowError(msg);
+            setResultPanelState(false);
+            scrollResultToLatest();
+        };
+
+        const originalUpdateToolResult = updateToolResult;
+        updateToolResult = function(data) {
+            originalUpdateToolResult(data);
+            scrollStepsToLatest();
+        };
+
+        // Initialize
+        updateStatus('就绪', '');
+    </script>
+</body>
+</html>

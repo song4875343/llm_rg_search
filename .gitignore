@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# 上传的文件夹
+uploaded_folders/
+
 # 其他常见需要忽略的文件
 __pycache__/
 *.py[cod]
