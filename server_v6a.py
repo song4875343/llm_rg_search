@@ -32,48 +32,21 @@ async def run_tool(func, **kwargs):
 @app.get("/")
 async def index(): return FileResponse('index_v6a.html')
 
-@app.post("/api/upload-folder")
-async def upload_folder(
-    folder_name: str = Form(...),
-    files: List[UploadFile] = File(...)
-):
-    """上传文件夹并设置为工作目录"""
+@app.post("/api/set-folder")
+async def set_folder(request: FolderPathRequest):
+    """设置工作文件夹路径"""
     try:
-        # 创建目标文件夹
-        target_folder = UPLOAD_DIR / folder_name
-        if target_folder.exists():
-            shutil.rmtree(target_folder)
-        target_folder.mkdir(parents=True, exist_ok=True)
+        folder_path = SCRIPT_DIR / request.folder_path if request.folder_path != "." else SCRIPT_DIR
         
-        print(f"📁 开始上传文件夹: {folder_name}")
+        if not folder_path.exists():
+            return JSONResponse({"success": False, "message": "文件夹不存在"}, status_code=400)
         
-        # 保存所有文件
-        saved_files = []
-        for file in files:
-            # 获取相对路径
-            relative_path = file.filename
-            if '/' in relative_path:
-                # 移除文件夹名称前缀
-                parts = relative_path.split('/', 1)
-                if len(parts) > 1:
-                    relative_path = parts[1]
-            
-            # 创建完整路径
-            file_path = target_folder / relative_path
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # 保存文件
-            content = await file.read()
-            with open(file_path, 'wb') as f:
-                f.write(content)
-            
-            saved_files.append(relative_path)
-        
-        print(f"✅ 上传完成: {len(saved_files)} 个文件")
+        if not folder_path.is_dir():
+            return JSONResponse({"success": False, "message": "路径不是文件夹"}, status_code=400)
         
         # 更新全局变量
         global TARGET, INDEX_DIR, MAIN_INDEX, FILE_MAP, DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE
-        TARGET = target_folder
+        TARGET = folder_path
         INDEX_DIR = TARGET / ".index"
         MAIN_INDEX = INDEX_DIR / "index.json"
         
@@ -85,100 +58,136 @@ async def upload_folder(
         DETAIL_TOC_CACHE = {}
         SEARCH_RESULT_CACHE = {}
         
-        print(f"📄 找到 {len(FILE_MAP)} 个文档文件")
+        print(f"📁 工作文件夹已更新: {TARGET}")
+        print(f"📄 找到 {len(FILE_MAP)} 个文件")
         
         return JSONResponse({
-            "success": True,
-            "message": f"文件夹上传成功",
-            "folder_path": str(target_folder),
+            "success": True, 
+            "message": f"已设置文件夹: {folder_path}",
             "file_count": len(FILE_MAP),
             "files": list(FILE_MAP.keys())
         })
     
     except Exception as e:
-        print(f"❌ 上传失败: {e}")
-        return JSONResponse({"success": False, "message": f"上传失败: {str(e)}"}, status_code=500)
+        print(f"❌ 设置文件夹失败: {e}")
+        return JSONResponse({"success": False, "message": f"设置文件夹失败: {str(e)}"}, status_code=500)
 
-@app.post("/api/upload-and-index")
-async def upload_and_index(
-    folder_name: str = Form(...),
-    files: List[UploadFile] = File(...)
-):
-    """上传文件夹并生成索引"""
+@app.get("/api/folders")
+async def get_folders(path: str = "."):
+    """获取文件夹列表"""
     try:
-        # 创建目标文件夹
-        target_folder = UPLOAD_DIR / folder_name
-        if target_folder.exists():
-            shutil.rmtree(target_folder)
-        target_folder.mkdir(parents=True, exist_ok=True)
+        # 解析路径
+        if path == ".":
+            target_path = SCRIPT_DIR
+        else:
+            target_path = SCRIPT_DIR / path
         
-        print(f"📁 开始上传并索引文件夹: {folder_name}")
+        if not target_path.exists() or not target_path.is_dir():
+            return JSONResponse({"error": "Folder not found"}, status_code=404)
         
-        # 保存所有文件
-        saved_files = []
-        for file in files:
-            # 获取相对路径
-            relative_path = file.filename
-            if '/' in relative_path:
-                parts = relative_path.split('/', 1)
-                if len(parts) > 1:
-                    relative_path = parts[1]
-            
-            # 创建完整路径
-            file_path = target_folder / relative_path
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # 保存文件
-            content = await file.read()
-            with open(file_path, 'wb') as f:
-                f.write(content)
-            
-            saved_files.append(relative_path)
+        # 获取子文件夹
+        folders = []
+        files_count = 0
         
-        print(f"✅ 上传完成: {len(saved_files)} 个文件")
+        for item in sorted(target_path.iterdir()):
+            if item.is_dir() and not item.name.startswith('.'):
+                folders.append(item.name)
+            elif item.is_file() and item.suffix in ['.txt', '.md']:
+                files_count += 1
         
-        # 创建索引目录
-        index_dir = target_folder / ".index"
-        index_dir.mkdir(exist_ok=True)
+        # 获取父文件夹
+        parent = None
+        if target_path != SCRIPT_DIR:
+            parent_path = target_path.parent
+            parent = str(parent_path.relative_to(SCRIPT_DIR)) if parent_path != SCRIPT_DIR else "."
         
-        print(f"🔨 开始生成索引...")
-        
-        # 调用扫描函数生成索引
-        await asyncio.to_thread(scan_folder, str(target_folder), recursive=True, output_dir=str(index_dir))
-        
-        # 统计生成的索引文件
-        index_files = list(index_dir.glob("*.index.json"))
-        
-        print(f"✅ 索引生成完成: {len(index_files)} 个索引文件")
-        
-        # 更新全局变量
-        global TARGET, INDEX_DIR, MAIN_INDEX, FILE_MAP, DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE
-        TARGET = target_folder
-        INDEX_DIR = index_dir
-        MAIN_INDEX = INDEX_DIR / "index.json"
-        
-        # 重新扫描文件
-        FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) 
-                    if (TARGET / f).is_file() and f.endswith((".txt", ".md"))}
-        
-        # 清空缓存
-        DETAIL_TOC_CACHE = {}
-        SEARCH_RESULT_CACHE = {}
+        # 当前路径（相对于SCRIPT_DIR）
+        current = str(target_path.relative_to(SCRIPT_DIR)) if target_path != SCRIPT_DIR else "."
         
         return JSONResponse({
-            "success": True,
-            "message": f"文件夹上传并索引成功",
-            "folder_path": str(target_folder),
-            "file_count": len(FILE_MAP),
-            "index_count": len(index_files),
-            "has_main_index": MAIN_INDEX.exists()
+            "current": current,
+            "parent": parent,
+            "folders": folders,
+            "files_count": files_count
         })
     
     except Exception as e:
-        print(f"❌ 上传并索引失败: {e}")
+        print(f"❌ 获取文件夹列表失败: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/index-status")
+async def get_index_status(folder: str = "texts"):
+    """检查文件夹索引状态"""
+    try:
+        folder_path = SCRIPT_DIR / folder if folder != "." else SCRIPT_DIR
+        index_dir = folder_path / ".index"
+        main_index = index_dir / "index.json"
+        
+        if main_index.exists():
+            # 统计索引文件数量
+            index_files = list(index_dir.glob("*.index.json"))
+            return JSONResponse({
+                "indexed": True,
+                "file_count": len(index_files),
+                "folder": folder
+            })
+        else:
+            return JSONResponse({
+                "indexed": False,
+                "folder": folder
+            })
+    
+    except Exception as e:
+        print(f"❌ 检查索引状态失败: {e}")
+        return JSONResponse({"indexed": False, "folder": folder})
+
+@app.post("/api/index-folder")
+async def index_folder_endpoint(request: IndexRequest):
+    """对指定文件夹生成索引"""
+    try:
+        folder_path = SCRIPT_DIR / request.folder_path if request.folder_path != "." else SCRIPT_DIR
+        
+        if not folder_path.exists():
+            return JSONResponse({"success": False, "message": "文件夹不存在"}, status_code=400)
+        
+        if not folder_path.is_dir():
+            return JSONResponse({"success": False, "message": "路径不是文件夹"}, status_code=400)
+        
+        # 创建索引目录
+        index_dir = folder_path / ".index"
+        index_dir.mkdir(exist_ok=True)
+        
+        print(f"🔨 开始为文件夹生成索引: {folder_path}")
+        
+        # 调用扫描函数生成索引
+        await asyncio.to_thread(scan_folder, str(folder_path), recursive=True, output_dir=str(index_dir))
+        
+        # 统计生成的索引文件
+        index_files = list(index_dir.glob("*.index.json"))
+        main_index = index_dir / "index.json"
+        
+        print(f"✅ 索引生成完成: {len(index_files)} 个文件")
+        
+        # 如果是当前工作目录，更新全局变量
+        global TARGET, INDEX_DIR, MAIN_INDEX, FILE_MAP, DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE
+        if folder_path == TARGET or str(folder_path) == str(TARGET):
+            INDEX_DIR = index_dir
+            MAIN_INDEX = main_index
+            DETAIL_TOC_CACHE = {}
+            SEARCH_RESULT_CACHE = {}
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"索引生成成功",
+            "index_count": len(index_files),
+            "has_main_index": main_index.exists()
+        })
+    
+    except Exception as e:
+        print(f"❌ 索引生成失败: {e}")
         import traceback
         traceback.print_exc()
-        return JSONResponse({"success": False, "message": f"上传并索引失败: {str(e)}"}, status_code=500)
+        return JSONResponse({"success": False, "message": f"索引生成失败: {str(e)}"}, status_code=500)
 
 @app.websocket("/ws/query")
 async def query(ws: WebSocket):

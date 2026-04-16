@@ -196,6 +196,203 @@
             color: var(--bg);
         }
 
+        /* Folder Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(244, 241, 235, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--bg);
+            border: 2px solid var(--ink);
+            padding: 40px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 8px 8px 0 var(--ink);
+        }
+
+        .modal-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .folder-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .folder-nav-btn {
+            background: transparent;
+            border: 1px solid var(--ink);
+            padding: 6px 12px;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .folder-nav-btn:hover:not(:disabled) {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        .folder-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .folder-current {
+            font-size: 12px;
+            color: var(--ink-light);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .folder-list {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            padding: 8px;
+            max-height: 300px;
+            margin-bottom: 20px;
+            overflow-y: auto;
+        }
+
+        .folder-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.1s;
+        }
+
+        .folder-item:last-child {
+            border-bottom: none;
+        }
+
+        .folder-item:hover {
+            background: var(--bg);
+        }
+
+        .folder-icon {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .folder-name {
+            font-size: 13px;
+        }
+
+        .folder-empty {
+            padding: 20px;
+            text-align: center;
+            color: var(--ink-muted);
+            font-style: italic;
+        }
+
+        .folder-info {
+            font-size: 11px;
+            color: var(--ink-muted);
+            margin-top: 4px;
+            text-align: center;
+        }
+
+        .folder-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .folder-actions .modal-btn {
+            flex: 1;
+        }
+
+        .modal-btn {
+            background: var(--ink);
+            color: var(--bg);
+            border: none;
+            padding: 12px 24px;
+            font-family: inherit;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .modal-btn:hover {
+            background: var(--accent);
+        }
+
+        .modal-btn.secondary {
+            background: transparent;
+            border: 2px solid var(--ink);
+            color: var(--ink);
+        }
+
+        .modal-btn.secondary:hover {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        .panel-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .indexing-summary {
+            font-size: 13px;
+        }
+
+        .indexing-summary dl {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 6px 16px;
+        }
+
+        .indexing-summary dt {
+            color: var(--ink-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .indexing-summary dd {
+            font-weight: 600;
+        }
+
         .search-mode-section {
             margin-top: 14px;
             display: flex;
@@ -268,7 +465,7 @@
         }
 
         .progress-bar.active .progress-fill {
-            animation: indeterminate 1.5s infinite;
+            /* animation: indeterminate 1.5s infinite; */
         }
 
         @keyframes indeterminate {
@@ -283,7 +480,7 @@
             grid-template-columns: 1fr 1fr;
             gap: 20px;
             flex: 1;
-            align-items: start;
+            align-items: stretch;
         }
 
         @media (max-width: 1000px) {
@@ -297,6 +494,7 @@
             display: flex;
             flex-direction: column;
             min-height: 500px;
+            height: 100%;
         }
 
         .section-header {
@@ -325,14 +523,16 @@
         .steps-list {
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 4px;
             min-height: 100%;
+            flex: 1;
         }
 
         .step {
             background: var(--bg-alt);
             border-left: 3px solid var(--ink-muted);
-            padding: 16px 20px;
+            border-top: 3px solid transparent;
+            padding: 10px 14px;
             animation: appear 0.2s ease;
         }
 
@@ -345,12 +545,23 @@
         .step.grep { border-left-color: var(--accent); }
         .step.read { border-left-color: var(--success); }
         .step.thinking { border-left-color: #8250df; }
+        .step.turn-step { border-top-color: var(--success); }
+
+        /* 呼吸式动画 */
+        @keyframes breathe {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .step.turn-step.active {
+            animation: breathe 2s ease-in-out infinite;
+        }
 
         .step-header {
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
 
         .step-id {
@@ -368,7 +579,7 @@
         .step-content {
             font-size: 12px;
             color: var(--ink-light);
-            line-height: 1.5;
+            line-height: 1.35;
             white-space: pre-wrap;
             max-height: 200px;
             overflow-y: auto;
@@ -378,7 +589,19 @@
             font-size: 12px;
             color: var(--ink-muted);
             font-style: italic;
-            margin-top: 8px;
+            margin-top: 5px;
+        }
+
+        .steps-filler {
+            flex: 1 1 auto;
+            min-height: 0;
+            background: var(--bg-alt);
+            border-left: 3px solid transparent;
+            border-top: 3px solid transparent;
+        }
+
+        .empty-state + .steps-filler {
+            display: none;
         }
 
         /* Empty State */
@@ -410,6 +633,7 @@
             line-height: 1.8;
             padding: 20px;
             background: var(--bg);
+            height: 100%;
         }
 
         .result-content.has-final-result {
@@ -527,6 +751,8 @@
         .scrollable {
             flex: 1;
             overflow-y: visible;
+            display: flex;
+            flex-direction: column;
         }
 
         /* Footer */
@@ -543,12 +769,7 @@
         .loading-text {
             font-style: italic;
             color: var(--ink-muted);
-            animation: blink 1s infinite;
-        }
-
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            animation: breathe 2s ease-in-out infinite;
         }
     </style>
 </head>
@@ -611,9 +832,10 @@
                 <div class="scrollable">
                     <div class="steps-list" id="stepsList">
                         <div class="empty-state">
-                            <div class="prompt">等待查询...</div>
-                            <div class="hint">输入问题后点击执行按钮</div>
+                            <!-- <div class="prompt">等待查询...</div>
+                            <div class="hint">输入问题后点击执行按钮</div> -->
                         </div>
+                        <div class="steps-filler" id="stepsFiller" aria-hidden="true"></div>
                     </div>
                 </div>
             </section>
@@ -625,8 +847,8 @@
                 </div>
                 <div class="result-content scrollable" id="resultContent">
                     <div class="empty-state">
-                        <div class="prompt">暂无结果</div>
-                        <div class="hint">执行完成后将在此显示答案</div>
+                        <!-- <div class="prompt">暂无结果</div>
+                        <div class="hint">执行完成后将在此显示答案</div> -->
                     </div>
                 </div>
             </section>
@@ -638,174 +860,221 @@
         </footer>
     </div>
 
-    <!-- 隐藏的文件夹选择器 -->
-    <input type="file" id="folderPicker" webkitdirectory directory multiple style="display: none;">
-    <input type="file" id="indexFolderPicker" webkitdirectory directory multiple style="display: none;">
+    <!-- Folder Picker Modal -->
+    <div class="modal-overlay" id="folderModal">
+        <div class="modal">
+            <div class="modal-title">Select Folder</div>
+            <div class="folder-nav">
+                <button class="folder-nav-btn" id="folderUpBtn" onclick="navigateUp()">↑ Parent</button>
+                <span class="folder-current" id="folderModalPath">.</span>
+            </div>
+            <div class="folder-list" id="folderList">
+                <div class="loading-text">Loading...</div>
+            </div>
+            <div class="folder-actions">
+                <button class="modal-btn secondary" onclick="closeFolderPicker()">Cancel</button>
+                <button class="modal-btn" onclick="selectCurrentFolder()">Select This Folder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Indexing Modal -->
+    <div class="modal-overlay" id="indexingModal">
+        <div class="modal">
+            <div id="indexingModalContent"></div>
+        </div>
+    </div>
 
     <script>
         // State
         let ws = null;
         let stepCount = 0;
         let isRunning = false;
-        let currentFolderPath = '';
+        let currentFolderPath = 'texts';
+        let browsingPath = '.';
 
         // Elements
         const queryInput = document.getElementById('queryInput');
         const queryBtn = document.getElementById('queryBtn');
         const stepsList = document.getElementById('stepsList');
-        const stepsScrollContainer = stepsList.closest('.scrollable');
         const stepCountEl = document.getElementById('stepCount');
         const resultContent = document.getElementById('resultContent');
         const progressBar = document.getElementById('progressBar');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
-        const folderPicker = document.getElementById('folderPicker');
-        const indexFolderPicker = document.getElementById('indexFolderPicker');
+        const folderModal = document.getElementById('folderModal');
+        const folderList = document.getElementById('folderList');
+        const folderModalPath = document.getElementById('folderModalPath');
+        const folderUpBtn = document.getElementById('folderUpBtn');
+        const indexingModal = document.getElementById('indexingModal');
+        const indexingModalContent = document.getElementById('indexingModalContent');
 
         document.title = 'fs-explorer';
 
-        // 从文件路径提取文件夹路径
-        function extractFolderPath(files) {
-            if (!files || files.length === 0) return null;
-            
-            // 获取第一个文件的完整路径
-            const firstFile = files[0];
-            const fullPath = firstFile.webkitRelativePath || firstFile.name;
-            
-            // 提取文件夹名称（第一个路径段）
-            const folderName = fullPath.split('/')[0];
-            
-            return folderName;
+        // ========== Folder Picker ==========
+        async function openFolderPicker() {
+            folderModal.classList.add('active');
+            browsingPath = currentFolderPath;
+            await loadFolders(browsingPath);
         }
 
-        // Browse 按钮处理
-        folderPicker.addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files);
-            if (files.length === 0) return;
-            
-            const folderName = extractFolderPath(files);
-            
-            // 过滤出 .txt 和 .md 文件
-            const validFiles = files.filter(f => 
-                f.name.endsWith('.txt') || f.name.endsWith('.md')
-            );
-            
-            if (validFiles.length === 0) {
-                alert('❌ 所选文件夹中没有找到 .txt 或 .md 文件');
-                return;
-            }
-            
-            updateStatus('上传中', 'active');
-            queryBtn.disabled = true;
-            
-            try {
-                // 创建 FormData 上传文件
-                const formData = new FormData();
-                formData.append('folder_name', folderName);
-                
-                for (const file of validFiles) {
-                    formData.append('files', file, file.webkitRelativePath || file.name);
-                }
-                
-                const response = await fetch('/api/upload-folder', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentFolderPath = data.folder_path;
-                    const fileList = data.files.slice(0, 5).join('\n  - ');
-                    const more = data.file_count > 5 ? `\n  ... 还有 ${data.file_count - 5} 个文件` : '';
-                    alert(`✅ ${data.message}\n\n找到 ${data.file_count} 个文件:\n  - ${fileList}${more}`);
-                    updateStatus('就绪', '');
-                    queryBtn.disabled = false;
-                } else {
-                    alert(`❌ ${data.message}`);
-                    updateStatus('错误', 'error');
-                    queryBtn.disabled = false;
-                }
-            } catch (err) {
-                alert(`❌ 上传失败: ${err.message}`);
-                updateStatus('错误', 'error');
-                queryBtn.disabled = false;
-            }
-            
-            // 重置 input
-            e.target.value = '';
-        });
-
-        // Index 按钮处理
-        indexFolderPicker.addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files);
-            if (files.length === 0) return;
-            
-            const folderName = extractFolderPath(files);
-            
-            // 过滤出 .txt 和 .md 文件
-            const validFiles = files.filter(f => 
-                f.name.endsWith('.txt') || f.name.endsWith('.md')
-            );
-            
-            if (validFiles.length === 0) {
-                alert('❌ 所选文件夹中没有找到 .txt 或 .md 文件');
-                return;
-            }
-            
-            if (!confirm(`确认要为文件夹 "${folderName}" 生成索引吗？\n\n将处理 ${validFiles.length} 个文件\n索引过程可能需要几分钟`)) {
-                e.target.value = '';
-                return;
-            }
-            
-            updateStatus('索引中', 'active');
-            queryBtn.disabled = true;
-            
-            const startTime = Date.now();
-            
-            try {
-                // 创建 FormData 上传文件
-                const formData = new FormData();
-                formData.append('folder_name', folderName);
-                
-                for (const file of validFiles) {
-                    formData.append('files', file, file.webkitRelativePath || file.name);
-                }
-                
-                const response = await fetch('/api/upload-and-index', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                
-                if (data.success) {
-                    currentFolderPath = data.folder_path;
-                    alert(`✅ ${data.message}\n\n生成了 ${data.index_count} 个索引文件\n耗时: ${elapsed} 秒`);
-                    updateStatus('就绪', '');
-                    queryBtn.disabled = false;
-                } else {
-                    alert(`❌ ${data.message}`);
-                    updateStatus('错误', 'error');
-                    queryBtn.disabled = false;
-                }
-            } catch (err) {
-                alert(`❌ 索引失败: ${err.message}`);
-                updateStatus('错误', 'error');
-                queryBtn.disabled = false;
-            }
-            
-            // 重置 input
-            e.target.value = '';
-        });
-
-        function openFolderPicker() {
-            folderPicker.click();
+        function closeFolderPicker() {
+            folderModal.classList.remove('active');
         }
 
+        async function loadFolders(path) {
+            folderList.innerHTML = '<div class="loading-text">Loading...</div>';
+            try {
+                const res = await fetch(`/api/folders?path=${encodeURIComponent(path)}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    folderList.innerHTML = `<div class="folder-empty">${esc(data.error)}</div>`;
+                    return;
+                }
+
+                browsingPath = data.current;
+                folderModalPath.textContent = data.current;
+                folderUpBtn.disabled = !data.parent;
+
+                if (data.folders.length === 0) {
+                    folderList.innerHTML = `
+                        <div class="folder-empty">No subfolders</div>
+                        <div class="folder-info">${data.files_count} file(s) in this folder</div>
+                    `;
+                } else {
+                    folderList.innerHTML = data.folders.map(name => `
+                        <div class="folder-item" onclick="navigateToFolder('${esc(name)}')">
+                            <span class="folder-icon">▸</span>
+                            <span class="folder-name">${esc(name)}</span>
+                        </div>
+                    `).join('');
+                    folderList.innerHTML += `<div class="folder-info">${data.files_count} file(s) in this folder</div>`;
+                }
+            } catch (e) {
+                folderList.innerHTML = `<div class="folder-empty">Error: ${esc(e.message)}</div>`;
+            }
+        }
+
+        async function navigateToFolder(name) {
+            const newPath = browsingPath === '.' ? name : `${browsingPath}/${name}`;
+            await loadFolders(newPath);
+        }
+
+        async function navigateUp() {
+            const res = await fetch(`/api/folders?path=${encodeURIComponent(browsingPath)}`);
+            const data = await res.json();
+            if (data.parent) {
+                await loadFolders(data.parent);
+            }
+        }
+
+        function selectCurrentFolder() {
+            currentFolderPath = browsingPath;
+            closeFolderPicker();
+            
+            // 更新服务器端的工作目录
+            fetch('/api/set-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder_path: currentFolderPath })
+            }).then(res => res.json()).then(data => {
+                if (data.success) {
+                    console.log(`✅ 已切换到文件夹: ${currentFolderPath}`);
+                }
+            }).catch(err => {
+                console.error('切换文件夹失败:', err);
+            });
+        }
+
+        // ========== Indexing Modal ==========
         function openIndexingModal() {
-            indexFolderPicker.click();
+            showIndexingConfigView();
+            indexingModal.classList.add('active');
+        }
+
+        function closeIndexingModal() {
+            indexingModal.classList.remove('active');
+        }
+
+        function showIndexingConfigView() {
+            indexingModalContent.innerHTML = `
+                <div class="modal-title">Index Folder</div>
+                <div style="font-size:13px;color:var(--ink-light);margin-bottom:20px;">
+                    Folder: <strong>${esc(currentFolderPath)}</strong>
+                </div>
+                <div style="font-size:12px;color:var(--ink-muted);margin-bottom:20px;">
+                    This will scan all .txt and .md files in the folder and generate index files.
+                </div>
+                <div class="folder-actions">
+                    <button class="modal-btn secondary" onclick="closeIndexingModal()">Cancel</button>
+                    <button class="modal-btn" onclick="startIndexing()">Start Indexing</button>
+                </div>
+            `;
+        }
+
+        async function startIndexing() {
+            if (isRunning) return;
+
+            isRunning = true;
+            updateStatus('Indexing', 'active');
+            progressBar.classList.add('active');
+            queryBtn.disabled = true;
+
+            // Show progress view in modal
+            indexingModalContent.innerHTML = `
+                <div class="modal-title">Indexing in Progress</div>
+                <div style="text-align:center;padding:40px 0;">
+                    <span class="panel-spinner" style="width:24px;height:24px;border-width:3px;"></span>
+                    <div style="margin-top:16px;font-size:13px;color:var(--ink-light);">
+                        Scanning documents and building index...
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/index-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder_path: currentFolderPath }),
+                });
+                const payload = await response.json();
+                
+                if (!response.ok || !payload.success) {
+                    throw new Error(payload.message || `Indexing failed (${response.status})`);
+                }
+                
+                showIndexingSummary(payload);
+                updateStatus('Indexed', '');
+            } catch (e) {
+                indexingModalContent.innerHTML = `
+                    <div class="modal-title">Indexing Failed</div>
+                    <div style="color:var(--accent);margin-bottom:20px;font-size:13px;">${esc(e.message)}</div>
+                    <button class="modal-btn" onclick="closeIndexingModal()">Close</button>
+                `;
+                updateStatus('Error', 'error');
+            }
+            
+            isRunning = false;
+            queryBtn.disabled = false;
+            progressBar.classList.remove('active');
+        }
+
+        function showIndexingSummary(result) {
+            indexingModalContent.innerHTML = `
+                <div class="modal-title">Indexing Complete</div>
+                <div class="indexing-summary">
+                    <dl>
+                        <dt>Index files created</dt>
+                        <dd>${result.index_count || 0}</dd>
+                        <dt>Main index</dt>
+                        <dd>${result.has_main_index ? 'Yes' : 'No'}</dd>
+                    </dl>
+                </div>
+                <div class="folder-actions" style="margin-top:20px;">
+                    <button class="modal-btn" onclick="closeIndexingModal()">Done</button>
+                </div>
+            `;
         }
 
         function setResultPanelState(hasFinalResult) {
@@ -920,7 +1189,7 @@ print(calc_ratio(120, 80))
             queryBtn.disabled = true;
             setResultPanelState(false);
 
-            stepsList.innerHTML = '<div class="empty-state"><div class="prompt">处理中...</div><div class="hint">正在启动查询</div></div>';
+            // stepsList.innerHTML = '<div class="empty-state"><div class="prompt">处理中...</div><div class="hint">正在启动查询</div></div>';
             resultContent.innerHTML = '<div class="loading-text">等待结果...</div>';
             progressBar.classList.add('active');
             stepCountEl.textContent = '—';
@@ -979,26 +1248,48 @@ print(calc_ratio(120, 80))
             }
         }
 
+        function ensureStepsFiller() {
+            if (!document.getElementById('stepsFiller')) {
+                stepsList.insertAdjacentHTML('beforeend', '<div class="steps-filler" id="stepsFiller" aria-hidden="true"></div>');
+            }
+        }
+
+        function scrollProcessToLatest() {
+            requestAnimationFrame(() => {
+                window.scrollTo({
+                    top: document.documentElement.scrollHeight,
+                    behavior: 'smooth'
+                });
+            });
+        }
+
         // Add turn step
         function addTurnStep(data) {
+            // 移除之前所有轮次的 active 状态
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+
             // 只在第一次时清空
             const emptyState = stepsList.querySelector('.empty-state');
             if (emptyState) {
                 stepsList.innerHTML = '';
+                ensureStepsFiller();
             }
 
             stepCount++;
             stepCountEl.textContent = `第 ${data.turn} 轮`;
 
             const html = `
-                <div class="step thinking" id="turn-${data.turn}">
+                <div class="step thinking turn-step active" id="turn-${data.turn}">
                     <div class="step-header">
                         <span class="step-id">第 ${data.turn} 轮</span>
                         <span class="step-tool">TURN</span>
                     </div>
                 </div>
             `;
-            stepsList.insertAdjacentHTML('beforeend', html);
+            document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
+            scrollProcessToLatest();
             console.log('✅ 添加第', data.turn, '轮');
         }
 
@@ -1008,6 +1299,7 @@ print(calc_ratio(120, 80))
             const emptyState = stepsList.querySelector('.empty-state');
             if (emptyState) {
                 stepsList.innerHTML = '';
+                ensureStepsFiller();
             }
 
             const toolClass = {
@@ -1034,8 +1326,9 @@ print(calc_ratio(120, 80))
                     <div class="step-summary">执行中...</div>
                 </div>
             `;
-            stepsList.insertAdjacentHTML('beforeend', html);
+            document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
             console.log('✅ 添加工具调用:', data.tool_name);
+            scrollProcessToLatest();
         }
 
         // Update tool result
@@ -1047,6 +1340,7 @@ print(calc_ratio(120, 80))
             if (summaryEl) {
                 summaryEl.textContent = data.summary || '完成';
             }
+            scrollProcessToLatest();
         }
 
         // Add thinking step
@@ -1055,6 +1349,7 @@ print(calc_ratio(120, 80))
             const emptyState = stepsList.querySelector('.empty-state');
             if (emptyState) {
                 stepsList.innerHTML = '';
+                ensureStepsFiller();
             }
 
             const html = `
@@ -1066,26 +1361,40 @@ print(calc_ratio(120, 80))
                     <div class="step-content">${esc(data.content.substring(0, 200))}${data.content.length > 200 ? '...' : ''}</div>
                 </div>
             `;
-            stepsList.insertAdjacentHTML('beforeend', html);
+            document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
             console.log('✅ 添加思考步骤');
+            scrollProcessToLatest();
         }
 
         // Show answer
         function showAnswer(data) {
             resultContent.innerHTML = `<div class="result-text">${renderMarkdown(data.content)}</div>`;
+            scrollProcessToLatest();
             setResultPanelState(false);
         }
 
         // Show final answer
         function showFinalAnswer(data) {
+            // 移除所有呼吸动画
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+            
             resultContent.innerHTML = `<div class="result-text">${renderMarkdown(data.content)}</div>`;
             updateStatus('完成', '');
+            scrollProcessToLatest();
         }
 
         // Show error
         function showError(msg) {
+            // 移除所有呼吸动画
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+            
             resultContent.innerHTML = `<div class="empty-state"><div class="prompt">错误</div><div class="hint">${esc(msg)}</div></div>`;
             updateStatus('错误', 'error');
+            scrollProcessToLatest();
         }
 
         // Finish
@@ -1358,6 +1667,7 @@ print(calc_ratio(120, 80))
             const maxHeight = Math.max(leftHeight, rightHeight);
             leftSection.style.minHeight = maxHeight + 'px';
             rightSection.style.minHeight = maxHeight + 'px';
+            ensureStepsFiller();
         }
 
         // 监听内容变化，同步高度
