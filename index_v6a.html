@@ -445,7 +445,8 @@
             pointer-events: none;
         }
 
-        .search-mode-options input[type="checkbox"] {
+        .search-mode-options input[type="checkbox"],
+        .search-mode-options input[type="radio"] {
             display: none;
         }
 
@@ -809,7 +810,8 @@
             <div class="search-mode-section" id="searchModeSection">
                 <div class="search-mode-label">Retrieval</div>
                 <div class="search-mode-options">
-                    <label><input type="checkbox" value="agentic" checked disabled><span>Agentic</span></label>
+                    <label><input type="radio" name="searchMode" value="fast" checked><span>Fast</span></label>
+                    <label><input type="radio" name="searchMode" value="agentic"><span>Agentic</span></label>
                     <label class="disabled" id="smSemantic"><input type="checkbox" id="cbSemantic" value="semantic" disabled><span>Semantic</span></label>
                     <label class="disabled" id="smMetadata"><input type="checkbox" id="cbMetadata" value="metadata" disabled><span>Metadata</span></label>
                 </div>
@@ -1185,6 +1187,9 @@ print(calc_ratio(120, 80))
                 return;
             }
 
+            // 获取选中的搜索模式
+            const searchMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
+
             if (ws) { ws.close(); ws = null; }
 
             isRunning = true;
@@ -1210,7 +1215,7 @@ print(calc_ratio(120, 80))
 
             ws.onopen = () => {
                 updateStatus('执行中', 'active');
-                ws.send(JSON.stringify({ question: query }));
+                ws.send(JSON.stringify({ question: query, mode: searchMode }));
             };
 
             ws.onmessage = (e) => {

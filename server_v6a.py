@@ -3,7 +3,7 @@ from fastapi import FastAPI, WebSocket, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import json, re, os, shutil
+import json, re, os, shutil, subprocess
 from pathlib import Path
 from typing import List
 from rg_search_v6a import *
@@ -22,6 +22,145 @@ class FolderPathRequest(BaseModel):
 
 class IndexRequest(BaseModel):
     folder_path: str
+
+# ==================== Fast模式搜索函数 ====================
+def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list = None, 
+                          search_dir: str = None, top_k: int = 15, context_lines: int = 0) -> str:
+    """
+    Fast模式：RG搜索 -> BM25排序 -> 添加上下文
+    改编自 rg-fast.py
+    """
+    if search_dir is None:
+        search_dir = str(TARGET)
+    
+    exact_keywords = exact_keywords or []
+    all_keywords = broad_keywords + exact_keywords
+    
+    print(f"\n🔍 [Fast模式] 原始问题: {query}")
+    print(f"🔍 关键词: 宽泛={broad_keywords}, 精确={exact_keywords}")
+    
+    # Step 1: RG 搜索收集匹配行
+    matching_lines = []
+    for kw in all_keywords:
+        try:
+            result = subprocess.run(
+                ['rg', '-n', '-i', kw, search_dir],
+                capture_output=True, text=True, encoding='utf-8', errors='ignore'
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if not line:
+                        continue
+                    # 使用正则表达式解析，处理Windows路径中的盘符
+                    # 格式: 文件路径:行号:内容
+                    # Windows绝对路径: C:\path\file.txt:123:content
+                    # 相对路径: path\file.txt:123:content
+                    match = re.match(r'^(.+?):(\d+):(.*)$', line)
+                    if match:
+                        matching_lines.append({
+                            'file': match.group(1),
+                            'line_num': int(match.group(2)),
+                            'content': match.group(3)
+                        })
+        except Exception as e:
+            print(f"⚠️ 搜索 '{kw}' 出错: {e}")
+    
+    if not matching_lines:
+        return "未找到匹配内容"
+    
+    print(f"✅ 找到 {len(matching_lines)} 个匹配行")
+    
+    # Step 2: BM25 排序
+    try:
+        from bm25_module import BM25
+        corpus = [line['content'] for line in matching_lines]
+        bm25 = BM25(corpus)
+        _, scores = bm25.get_top_n(query, len(corpus))
+        
+        # 按分数排序，并对包含精确关键词的行加分
+        for i, line in enumerate(matching_lines):
+            line['score'] = scores[i]
+            line_lower = line['content'].lower()
+            
+            # 统计宽泛关键词命中数量
+            broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in line_lower)
+            if broad_hit_count == 2:
+                line['score'] += 0.5
+            elif broad_hit_count >= 3:
+                line['score'] += 1.0
+            
+            # 如果行中包含精确关键词，额外加分
+            if exact_keywords:
+                for exact_kw in exact_keywords:
+                    if exact_kw.lower() in line_lower:
+                        line['score'] += 1.0
+                        break
+        
+        matching_lines.sort(key=lambda x: x['score'], reverse=True)
+    except ImportError:
+        print("⚠️ BM25模块未找到，跳过排序")
+    
+    # 去重
+    seen = set()
+    deduplicated = []
+    for line in matching_lines:
+        key = (line['file'], line['line_num'])
+        if key not in seen:
+            deduplicated.append(line)
+            seen.add(key)
+    
+    top_lines = deduplicated[:top_k]
+    print(f"📊 去重后: {len(deduplicated)} 行, Top-{len(top_lines)} 匹配行")
+    
+    # Step 3: 添加上下文
+    results = []
+    for i, line in enumerate(top_lines, 1):
+        context = _extract_context_fast(line['file'], line['line_num'], context_lines)
+        results.append(f"--- {os.path.basename(line['file'])}:行{line['line_num']}  ---\n{context}\n")
+    
+    final_result = "\n".join(results)
+    print(f"✅ 返回内容总长度: {len(final_result)} 字符")
+    return final_result
+
+def _extract_context_fast(filepath: str, line_num: int, context_lines: int = 0) -> str:
+    """提取上下文"""
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+        start = max(0, line_num - context_lines - 1)
+        end = min(len(lines), line_num + context_lines)
+        return "".join(f"{i+1}: {lines[i]}" for i in range(start, end))
+    except:
+        return ""
+
+# ==================== Fast模式工具定义 ====================
+TOOLS_FAST = [{
+    "type": "function",
+    "function": {
+        "name": "search_documents",
+        "description": "搜索文档并返回最相关的内容片段",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "用户的原始问题，用于 BM25 相关性计算"
+                },
+                "broad_keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "宽泛关键词列表，用于初步召回"
+                },
+                "exact_keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "1元素的精确关键词列表，用于评定返回内容的命中可能性"
+                }
+            },
+            "required": ["query", "broad_keywords"]
+        }
+    }
+}]
 
 async def create_chat_completion(**kwargs):
     return await asyncio.to_thread(get_client().chat.completions.create, **kwargs)
@@ -197,67 +336,187 @@ async def query(ws: WebSocket):
         data = await ws.receive_json()
         print(f"📩 收到消息: {data}")
         question = data.get('question', '')
-        if not question: return await ws.send_json({'type': 'error', 'data': {'message': '问题不能为空'}})
+        mode = data.get('mode', 'agentic')  # 默认agentic模式
         
-        global SEARCH_RESULT_CACHE
-        SEARCH_RESULT_CACHE = {}
+        if not question: 
+            return await ws.send_json({'type': 'error', 'data': {'message': '问题不能为空'}})
         
-        messages = [
-            {"role": "system", "content": f"你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。\n\n【资料库全局目录】\n{get_global_toc_summary()}\n\n【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)\n【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 "},
-            {"role": "user", "content": question}
-        ]
+        print(f"🔧 使用模式: {mode}")
         
-        for turn in range(15):
-            print(f"\n[第 {turn + 1} 轮]")
-            await ws.send_json({'type': 'turn', 'data': {'turn': turn + 1}})
-            await asyncio.sleep(0)
-            
-            try:
-                response = await create_chat_completion(model=MODEL_NAME, messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto", temperature=1)
-            except Exception as e:
-                print(f"❌ API错误: {e}")
-                return await ws.send_json({'type': 'error', 'data': {'message': f'API错误: {e}'}})
-            
-            msg = response.choices[0].message
-            messages.append(msg)
-            
-            if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
-                print(f"🧠 [思考]: {msg.reasoning_content[:100]}...")
-                await ws.send_json({'type': 'thinking', 'data': {'content': msg.reasoning_content}})
-                await asyncio.sleep(0)
-            
-            if msg.tool_calls:
-                for tc in msg.tool_calls:
-                    args = json.loads(tc.function.arguments)
-                    print(f"🔧 [工具调用] {tc.function.name}: {args}")
-                    await ws.send_json({'type': 'tool_call', 'data': {'tool_call_id': tc.id, 'tool_name': tc.function.name, 'arguments': args}})
-                    await asyncio.sleep(0)
-                    
-                    func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}.get(tc.function.name)
-                    if func:
-                        result = await run_tool(func, **args)
-                        summary = ('❌ 未找到匹配' if '未找到匹配项' in result or '未匹配任何文件' in result else 
-                                   '⚠️ 结果已重复' if '所有结果已重复' in result else 
-                                   f'✅ 找到 {m.group(1)} 条新记录' if (m := re.search(r'(\d+)\s*条新记录', result)) else '✅ 搜索完成') if tc.function.name == 'execute_grep' else \
-                                  f'✅ 读取 {args["end_line"] - args["start_line"] + 1} 行' if tc.function.name == 'read_file_range' else \
-                                  ('❌ 文件未找到' if 'error' in result else '✅ 目录获取成功')
-                        
-                        print(f"📤 [发送结果] {summary}")
-                        await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc.id, 'summary': summary}})
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-            else:
-                print(f"✅ [最终答案]: {msg.content[:100]}...")
-                await ws.send_json({'type': 'final_answer', 'data': {'content': msg.content}})
-                await ws.close()
-                return
-        
-        messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
-        final = await create_chat_completion(model=MODEL_NAME, messages=messages, temperature=1)
-        await ws.send_json({'type': 'final_answer', 'data': {'content': final.choices[0].message.content}})
-        await ws.close()
+        if mode == 'fast':
+            # Fast模式：两步走
+            await query_fast_mode(ws, question)
+        else:
+            # Agentic模式：原有逻辑
+            await query_agentic_mode(ws, question)
+    
     except Exception as e:
         await ws.send_json({'type': 'error', 'data': {'message': str(e)}})
         await ws.close()
+
+async def query_fast_mode(ws: WebSocket, question: str):
+    """Fast模式查询"""
+    print("\n[Fast模式] 开始查询")
+    
+    system_prompt = """你是文档检索专家。
+
+工作流程：
+1. 分析用户问题，提取关键词
+2. 调用 search_documents 工具搜索
+3. 基于搜索结果生成答案
+
+注意：
+- broad_keywords: 1-2个核心关键词
+- exact_keywords: 1个最特殊、最关键的元关键词
+- 必须先调用工具再回答"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": question}
+    ]
+    
+    # 第一轮：LLM 调用工具
+    await ws.send_json({'type': 'turn', 'data': {'turn': 1}})
+    await asyncio.sleep(0)
+    
+    try:
+        response = await create_chat_completion(
+            model=MODEL_NAME, 
+            messages=messages, 
+            tools=TOOLS_FAST, 
+            tool_choice="auto", 
+            temperature=1
+        )
+    except Exception as e:
+        print(f"❌ API错误: {e}")
+        return await ws.send_json({'type': 'error', 'data': {'message': f'API错误: {e}'}})
+    
+    msg = response.choices[0].message
+    
+    if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
+        print(f"🧠 [思考]: {msg.reasoning_content[:100]}...")
+        await ws.send_json({'type': 'thinking', 'data': {'content': msg.reasoning_content}})
+        await asyncio.sleep(0)
+    
+    if not msg.tool_calls:
+        print("⚠️ LLM 未生成关键词")
+        await ws.send_json({'type': 'final_answer', 'data': {'content': '无法生成搜索关键词'}})
+        await ws.close()
+        return
+    
+    tool_results = []
+    for tc in msg.tool_calls:
+        if tc.function.name == "search_documents":
+            args = json.loads(tc.function.arguments)
+            print(f"🔧 [工具调用] search_documents: {args}")
+            await ws.send_json({'type': 'tool_call', 'data': {
+                'tool_call_id': tc.id, 
+                'tool_name': 'search_documents', 
+                'arguments': args
+            }})
+            await asyncio.sleep(0)
+            
+            result = await run_tool(
+                search_documents_fast,
+                query=args.get("query", question),
+                broad_keywords=args.get("broad_keywords", []),
+                exact_keywords=args.get("exact_keywords", []),
+                search_dir=str(TARGET),
+                top_k=10,
+                context_lines=10
+            )
+            
+            summary = '❌ 未找到匹配' if '未找到匹配内容' in result else f'✅ 搜索完成'
+            print(f"📤 [发送结果] {summary}")
+            await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc.id, 'summary': summary}})
+            
+            tool_results.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result
+            })
+    
+    # 第二轮：LLM 生成答案
+    await ws.send_json({'type': 'turn', 'data': {'turn': 2}})
+    await asyncio.sleep(0)
+    
+    system_prompt_2 = f"""你是根据文档总结回答问题的专家
+根据文档已经检索到的信息为{tool_results}，根据信息回答问题，并给出明确依据，未提及的不要回答。"""
+
+    messages_2 = [
+        {"role": "system", "content": system_prompt_2},
+        {"role": "user", "content": question}
+    ]
+    
+    final_response = await create_chat_completion(
+        model=MODEL_NAME,
+        messages=messages_2,
+        temperature=1
+    )
+    
+    answer = final_response.choices[0].message.content
+    print(f"✅ [最终答案]: {answer[:100]}...")
+    await ws.send_json({'type': 'final_answer', 'data': {'content': answer}})
+    await ws.close()
+
+async def query_agentic_mode(ws: WebSocket, question: str):
+    """Agentic模式查询（原有逻辑）"""
+    global SEARCH_RESULT_CACHE
+    SEARCH_RESULT_CACHE = {}
+    
+    messages = [
+        {"role": "system", "content": f"你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。\n\n【资料库全局目录】\n{get_global_toc_summary()}\n\n【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)\n【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 "},
+        {"role": "user", "content": question}
+    ]
+    
+    for turn in range(15):
+        print(f"\n[第 {turn + 1} 轮]")
+        await ws.send_json({'type': 'turn', 'data': {'turn': turn + 1}})
+        await asyncio.sleep(0)
+        
+        try:
+            response = await create_chat_completion(model=MODEL_NAME, messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto", temperature=1)
+        except Exception as e:
+            print(f"❌ API错误: {e}")
+            return await ws.send_json({'type': 'error', 'data': {'message': f'API错误: {e}'}})
+        
+        msg = response.choices[0].message
+        messages.append(msg)
+        
+        if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
+            print(f"🧠 [思考]: {msg.reasoning_content[:100]}...")
+            await ws.send_json({'type': 'thinking', 'data': {'content': msg.reasoning_content}})
+            await asyncio.sleep(0)
+        
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                args = json.loads(tc.function.arguments)
+                print(f"🔧 [工具调用] {tc.function.name}: {args}")
+                await ws.send_json({'type': 'tool_call', 'data': {'tool_call_id': tc.id, 'tool_name': tc.function.name, 'arguments': args}})
+                await asyncio.sleep(0)
+                
+                func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}.get(tc.function.name)
+                if func:
+                    result = await run_tool(func, **args)
+                    summary = ('❌ 未找到匹配' if '未找到匹配项' in result or '未匹配任何文件' in result else 
+                               '⚠️ 结果已重复' if '所有结果已重复' in result else 
+                               f'✅ 找到 {m.group(1)} 条新记录' if (m := re.search(r'(\d+)\s*条新记录', result)) else '✅ 搜索完成') if tc.function.name == 'execute_grep' else \
+                              f'✅ 读取 {args["end_line"] - args["start_line"] + 1} 行' if tc.function.name == 'read_file_range' else \
+                              ('❌ 文件未找到' if 'error' in result else '✅ 目录获取成功')
+                    
+                    print(f"📤 [发送结果] {summary}")
+                    await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc.id, 'summary': summary}})
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+        else:
+            print(f"✅ [最终答案]: {msg.content[:100]}...")
+            await ws.send_json({'type': 'final_answer', 'data': {'content': msg.content}})
+            await ws.close()
+            return
+    
+    messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
+    final = await create_chat_completion(model=MODEL_NAME, messages=messages, temperature=1)
+    await ws.send_json({'type': 'final_answer', 'data': {'content': final.choices[0].message.content}})
+    await ws.close()
 
 if __name__ == '__main__':
     import uvicorn
