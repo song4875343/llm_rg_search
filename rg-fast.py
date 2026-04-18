@@ -26,12 +26,12 @@ MODEL_CONFIG = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
     3: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-235B-A22B-Instruct-2507'},
-    4: {'base_url': 'https://aigw-jnzs5.cucloud.cn:8443/v1', 'api_key': 'OPENAI_API_KEY', 'model_name': 'MiniMax-M2.5'},
+    4: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3.5-27B'},
     5: {'base_url': 'http://localhost:11434/v1', 'api_key': 'ollama', 'model_name': 'gemma4:e4b'},
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'kimi-k2.5:cloud'},
 }
 
-MODEL_NUM = 3
+MODEL_NUM = 4
 
 # ================= 初始化客户端 =================
 config = MODEL_CONFIG[MODEL_NUM]
