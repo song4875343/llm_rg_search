@@ -883,6 +883,14 @@
                 <div style="font-size: 13px; color: var(--ink); margin-bottom: 8px;" id="currentModelDisplay">Loading...</div>
                 <button class="folder-nav-btn" onclick="openModelPicker()" style="width: 100%;">Change Model</button>
             </div>
+            <div style="margin: 16px 0; padding: 12px; background: var(--bg-alt); border: 1px solid var(--border);">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-muted); margin-bottom: 8px;">Context Lines</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="contextLinesInput" min="0" max="50" style="flex: 1; padding: 6px; font-family: inherit; font-size: 13px; border: 1px solid var(--border);" />
+                    <button class="folder-nav-btn" onclick="updateContextLines()">Set</button>
+                </div>
+                <div style="font-size: 11px; color: var(--ink-muted); margin-top: 4px;">Range: 0-50 lines</div>
+            </div>
             <div class="folder-actions">
                 <button class="modal-btn secondary" onclick="closeFolderPicker()">Cancel</button>
                 <button class="modal-btn" onclick="selectCurrentFolder()">Confirm</button>
@@ -918,12 +926,14 @@
         let currentFolderPath = 'texts';
         let browsingPath = '.';
         let currentModelNum = 4;  // 默认序号4
+        let currentContextLines = 10;  // 默认上下文行数
 
         // Load settings from localStorage
         function loadSettings() {
             const savedFolder = localStorage.getItem('currentFolder');
             const savedMode = localStorage.getItem('searchMode');
             const savedModelNum = localStorage.getItem('currentModelNum');
+            const savedContextLines = localStorage.getItem('currentContextLines');
             
             if (savedFolder) {
                 currentFolderPath = savedFolder;
@@ -939,6 +949,10 @@
             if (savedModelNum) {
                 currentModelNum = parseInt(savedModelNum);
             }
+            
+            if (savedContextLines) {
+                currentContextLines = parseInt(savedContextLines);
+            }
         }
 
         // Save settings to localStorage
@@ -947,6 +961,7 @@
             const selectedMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
             localStorage.setItem('searchMode', selectedMode);
             localStorage.setItem('currentModelNum', currentModelNum);
+            localStorage.setItem('currentContextLines', currentContextLines);
         }
 
         // Sync settings to backend
@@ -972,11 +987,23 @@
                 const modelData = await modelRes.json();
                 if (modelData.success) {
                     console.log(`✅ 已同步模型到后端: ${modelData.model_name} (序号${currentModelNum})`);
-                    updateStatus(`就绪 | ${currentFolderPath} | ${modelData.model_name}`, '');
                 }
+
+                // 同步上下文行数
+                const contextRes = await fetch('/api/set-context-lines', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context_lines: currentContextLines })
+                });
+                const contextData = await contextRes.json();
+                if (contextData.success) {
+                    console.log(`✅ 已同步上下文行数到后端: ${currentContextLines}`);
+                }
+
+                await updateStatusWithConfig('就绪', '');
             } catch (err) {
                 console.error('同步设置到后端失败:', err);
-                updateStatus('同步失败', 'error');
+                await updateStatusWithConfig('同步失败', 'error');
             }
         }
 
@@ -1022,6 +1049,7 @@
             browsingPath = currentFolderPath;
             await loadFolders(browsingPath);
             await updateCurrentModelDisplay();
+            updateContextLinesDisplay();
         }
 
         function closeFolderPicker() {
@@ -1088,7 +1116,7 @@
             }).then(res => res.json()).then(data => {
                 if (data.success) {
                     console.log(`✅ 已切换到文件夹: ${currentFolderPath}`);
-                    updateStatus(`文件夹: ${currentFolderPath}`, '');
+                    updateStatusWithConfig('已更新', '');
                 }
             }).catch(err => {
                 console.error('切换文件夹失败:', err);
@@ -1107,6 +1135,40 @@
                 }
             } catch (e) {
                 console.error('获取模型信息失败:', e);
+            }
+        }
+
+        function updateContextLinesDisplay() {
+            document.getElementById('contextLinesInput').value = currentContextLines;
+        }
+
+        async function updateContextLines() {
+            const input = document.getElementById('contextLinesInput');
+            const value = parseInt(input.value);
+            
+            if (isNaN(value) || value < 0 || value > 50) {
+                alert('上下文行数必须在 0-50 之间');
+                input.value = currentContextLines;
+                return;
+            }
+            
+            currentContextLines = value;
+            saveSettings();  // Save to localStorage
+            
+            // 同步到后端
+            try {
+                const res = await fetch('/api/set-context-lines', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context_lines: currentContextLines })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    console.log(`✅ 已设置上下文行数: ${currentContextLines}`);
+                    await updateStatusWithConfig('已更新', '');
+                }
+            } catch (err) {
+                console.error('设置上下文行数失败:', err);
             }
         }
 
@@ -1157,7 +1219,7 @@
                 const data = await res.json();
                 if (data.success) {
                     console.log(`✅ 已切换到模型: ${modelName} (序号${modelNum})`);
-                    updateStatus(`模型: ${modelName}`, '');
+                    await updateStatusWithConfig('已更新', '');
                     await updateCurrentModelDisplay();
                 }
             } catch (err) {
@@ -1195,7 +1257,7 @@
             if (isRunning) return;
 
             isRunning = true;
-            updateStatus('Indexing', 'active');
+            await updateStatusWithConfig('索引中', 'active');
             progressBar.classList.add('active');
             queryBtn.disabled = true;
 
@@ -1223,14 +1285,14 @@
                 }
                 
                 showIndexingSummary(payload);
-                updateStatus('Indexed', '');
+                await updateStatusWithConfig('索引完成', '');
             } catch (e) {
                 indexingModalContent.innerHTML = `
                     <div class="modal-title">Indexing Failed</div>
                     <div style="color:var(--accent);margin-bottom:20px;font-size:13px;">${esc(e.message)}</div>
                     <button class="modal-btn" onclick="closeIndexingModal()">Close</button>
                 `;
-                updateStatus('Error', 'error');
+                await updateStatusWithConfig('索引失败', 'error');
             }
             
             isRunning = false;
@@ -1324,14 +1386,14 @@ print(calc_ratio(120, 80))
             { type: 'thinking', data: { content: '整理结果，并用 Markdown、表格、公式生成最终展示。' } },
         ];
 
-        function runDemoMode() {
+        async function runDemoMode() {
             if (ws) { ws.close(); ws = null; }
 
             isRunning = true;
             stepCount = 0;
             queryBtn.disabled = true;
             progressBar.classList.add('active');
-            updateStatus('Executing', 'active');
+            await updateStatusWithConfig('执行中', 'active');
             stepCountEl.textContent = '-';
             
             // 清空左侧执行过程和右侧结果
@@ -1385,7 +1447,7 @@ print(calc_ratio(120, 80))
             progressBar.classList.add('active');
             stepCountEl.textContent = '—';
 
-            updateStatus('连接中', 'active');
+            await updateStatusWithConfig('连接中', 'active');
 
             // 如果是file://协议，使用localhost:5000
             const wsUrl = window.location.protocol === 'file:' 
@@ -1394,14 +1456,15 @@ print(calc_ratio(120, 80))
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                updateStatus('执行中', 'active');
-                console.log(`📤 发送查询 | 文件夹: ${currentFolderPath} | 模式: ${searchMode} | 模型序号: ${currentModelNum}`);
+                updateStatusWithConfig('执行中', 'active');
+                console.log(`📤 发送查询 | 文件夹: ${currentFolderPath} | 模式: ${searchMode} | 模型序号: ${currentModelNum} | 上下文: ${currentContextLines}行`);
                 // 发送查询时同步所有设置（WebSocket 内部会再次同步到后端）
                 ws.send(JSON.stringify({ 
                     question: query, 
                     mode: searchMode,
                     folder_path: currentFolderPath,
-                    model_num: currentModelNum
+                    model_num: currentModelNum,
+                    context_lines: currentContextLines
                 }));
             };
 
@@ -1411,8 +1474,8 @@ print(calc_ratio(120, 80))
                 handleMessage(msg);
             };
             
-            ws.onerror = () => {
-                showError('连接失败，请确认后端服务是否运行');
+            ws.onerror = async () => {
+                await showError('连接失败，请确认后端服务是否运行');
                 finish();
             };
             
@@ -1420,7 +1483,7 @@ print(calc_ratio(120, 80))
         }
 
         // Handle message
-        function handleMessage(msg) {
+        async function handleMessage(msg) {
             switch (msg.type) {
                 case 'turn':
                     addTurnStep(msg.data);
@@ -1447,10 +1510,10 @@ print(calc_ratio(120, 80))
                     appendStreamChunk(msg.data.content);
                     break;
                 case 'final_answer':
-                    showFinalAnswer(msg.data);
+                    await showFinalAnswer(msg.data);
                     break;
                 case 'error':
-                    showError(msg.data.message);
+                    await showError(msg.data.message);
                     break;
             }
         }
@@ -1672,7 +1735,7 @@ let streamMarkdown = "";
 }
              
         // Show final answer
-        function showFinalAnswer(data) {
+        async function showFinalAnswer(data) {
             // 移除所有呼吸动画
             document.querySelectorAll('.turn-step.active').forEach(el => {
                 el.classList.remove('active');
@@ -1681,19 +1744,19 @@ let streamMarkdown = "";
             // 使用流式累积的内容，避免重复渲染
             const content = streamMarkdown || data.content;
             resultContent.innerHTML = `<div class="result-text">${renderMarkdown(content)}</div>`;
-            updateStatus('完成', '');
+            await updateStatusWithConfig('完成', '');
             scrollProcessToLatest();
         }
 
         // Show error
-        function showError(msg) {
+        async function showError(msg) {
             // 移除所有呼吸动画
             document.querySelectorAll('.turn-step.active').forEach(el => {
                 el.classList.remove('active');
             });
             
             resultContent.innerHTML = `<div class="empty-state"><div class="prompt">错误</div><div class="hint">${esc(msg)}</div></div>`;
-            updateStatus('错误', 'error');
+            await updateStatusWithConfig('错误', 'error');
             scrollProcessToLatest();
         }
 
@@ -1709,6 +1772,37 @@ let streamMarkdown = "";
         function updateStatus(text, state) {
             statusText.textContent = text;
             statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+        }
+
+        // Build full status text with config info
+        async function buildFullStatus(statusText) {
+            try {
+                // 获取当前模型名称
+                let modelName = 'Unknown';
+                try {
+                    const res = await fetch('/api/models');
+                    const data = await res.json();
+                    if (data.success) {
+                        const currentModel = data.models.find(m => m.id === currentModelNum);
+                        if (currentModel) {
+                            modelName = currentModel.model_name;
+                        }
+                    }
+                } catch (e) {
+                    // 如果获取失败，使用缓存的名称
+                    modelName = `Model#${currentModelNum}`;
+                }
+                
+                return `${statusText} | ${currentFolderPath} | ${modelName} | ${currentContextLines}行`;
+            } catch (e) {
+                return statusText;
+            }
+        }
+
+        // Update status with full config info
+        async function updateStatusWithConfig(statusText, state) {
+            const fullText = await buildFullStatus(statusText);
+            updateStatus(fullText, state);
         }
 
         // Format tool arguments
@@ -1991,7 +2085,9 @@ let streamMarkdown = "";
         setTimeout(syncSectionHeights, 100);
 
         // Initialize
-        updateStatus('就绪', '');
+        (async () => {
+            await updateStatusWithConfig('就绪', '');
+        })();
     </script>
 </body>
 </html>

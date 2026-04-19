@@ -21,6 +21,7 @@ MODEL_DICT = {
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'kimi-k2.5:cloud'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
+CONTENT_LINES=10
 print(f"🤖 当前使用模型: {MODEL_NAME} (序号: {num})")
 TARGET, INDEX_DIR = SCRIPT_DIR / "texts", SCRIPT_DIR / "texts" / ".index"
 MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (SCRIPT_DIR / "rg.exe").exists() else "rg")
@@ -130,7 +131,7 @@ def get_document_toc(filename):
     return json.dumps({"error": f"未找到 '{filename}'"}, ensure_ascii=False)
 
 def execute_grep(pattern, include_files=None):
-    cmd = [RG_EXE, "-n", "-i", "-H", "-C", "10", "-e", pattern, "-m", "50"]
+    cmd = [RG_EXE, "-n", "-i", "-H", "-C", str(CONTENT_LINES), "-e", pattern, "-m", "50"]
     scope = "全库"
     if include_files:
         targets = [(FILE_MAP[k], k) for req in include_files.split(",") for k in FILE_MAP if req.strip() in k]

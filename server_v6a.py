@@ -183,6 +183,9 @@ async def index(): return FileResponse('index_v6a.html')
 class ModelRequest(BaseModel):
     model_num: int
 
+class ContextLinesRequest(BaseModel):
+    context_lines: int
+
 @app.post("/api/set-folder")
 async def set_folder(request: FolderPathRequest):
     """设置工作文件夹路径"""
@@ -265,6 +268,42 @@ async def get_models():
     except Exception as e:
         print(f"❌ 获取模型列表失败: {e}")
         return JSONResponse({"success": False, "message": f"获取模型列表失败: {str(e)}"}, status_code=500)
+
+@app.post("/api/set-context-lines")
+async def set_context_lines(request: ContextLinesRequest):
+    """设置上下文行数"""
+    try:
+        if request.context_lines < 0 or request.context_lines > 50:
+            return JSONResponse({
+                "success": False,
+                "message": "上下文行数必须在 0-50 之间"
+            }, status_code=400)
+        
+        rg_search_v6a.CONTENT_LINES = request.context_lines
+        print(f"📏 上下文行数已更新: {request.context_lines}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"已设置上下文行数: {request.context_lines}",
+            "context_lines": request.context_lines
+        })
+    
+    except Exception as e:
+        print(f"❌ 设置上下文行数失败: {e}")
+        return JSONResponse({"success": False, "message": f"设置上下文行数失败: {str(e)}"}, status_code=500)
+
+@app.get("/api/context-lines")
+async def get_context_lines():
+    """获取当前上下文行数"""
+    try:
+        return JSONResponse({
+            "success": True,
+            "context_lines": rg_search_v6a.CONTENT_LINES
+        })
+    
+    except Exception as e:
+        print(f"❌ 获取上下文行数失败: {e}")
+        return JSONResponse({"success": False, "message": f"获取上下文行数失败: {str(e)}"}, status_code=500)
 
 @app.get("/api/folders")
 async def get_folders(path: str = "."):
@@ -392,6 +431,7 @@ async def query(ws: WebSocket):
         mode = data.get('mode', 'agentic')  # 默认agentic模式
         folder_path = data.get('folder_path', 'texts')
         model_num = data.get('model_num', None)
+        context_lines = data.get('context_lines', None)
         
         if not question: 
             return await ws.send_json({'type': 'error', 'data': {'message': '问题不能为空'}})
@@ -413,6 +453,12 @@ async def query(ws: WebSocket):
                 rg_search_v6a.num = model_num
                 rg_search_v6a.CLIENT = None  # 重置 CLIENT
                 print(f"🤖 已同步模型: {MODEL_DICT[model_num]['model_name']} (序号: {model_num})")
+        
+        # 同步上下文行数设置
+        if context_lines is not None:
+            if 0 <= context_lines <= 50:
+                rg_search_v6a.CONTENT_LINES = context_lines
+                print(f"📏 已同步上下文行数: {context_lines}")
         
         print(f"🔧 使用模式: {mode}")
         
@@ -578,7 +624,7 @@ async def query_fast_mode(ws: WebSocket, question: str):
                 exact_keywords=args.get("exact_keywords", []),
                 search_dir=str(rg_search_v6a.TARGET),
                 top_k=10,
-                context_lines=10
+                context_lines=rg_search_v6a.CONTENT_LINES
             )
             
             summary = '❌ 未找到匹配' if '未找到匹配内容' in result else f'✅ 搜索完成'
@@ -931,6 +977,7 @@ if __name__ == '__main__':
     model_name = MODEL_DICT[rg_search_v6a.num]["model_name"]
     print(f"\n🤖 模型: {model_name} (序号{rg_search_v6a.num})")
     print(f"📁 目标文件夹: {rg_search_v6a.TARGET}")
-    print(f"� 文档数量: {len(rg_search_v6a.FILE_MAP)}")
+    print(f"📄 文档数量: {len(rg_search_v6a.FILE_MAP)}")
+    print(f"📏 上下文行数: {rg_search_v6a.CONTENT_LINES}")
     print(f"🌐 服务地址: http://localhost:5000\n")
     uvicorn.run(app, host='0.0.0.0', port=5000)
