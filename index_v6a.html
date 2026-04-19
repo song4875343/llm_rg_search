@@ -296,6 +296,11 @@
             background: var(--bg);
         }
 
+        .folder-item.selected {
+            background: var(--accent-light);
+            font-weight: 600;
+        }
+
         .folder-icon {
             color: var(--accent);
             font-weight: bold;
@@ -810,8 +815,8 @@
             <div class="search-mode-section" id="searchModeSection">
                 <div class="search-mode-label">Retrieval</div>
                 <div class="search-mode-options">
-                    <label><input type="radio" name="searchMode" value="fast" checked><span>Fast</span></label>
-                    <label><input type="radio" name="searchMode" value="agentic"><span>Agentic</span></label>
+                    <label><input type="radio" name="searchMode" value="fast" checked onchange="onSearchModeChange()"><span>Fast</span></label>
+                    <label><input type="radio" name="searchMode" value="agentic" onchange="onSearchModeChange()"><span>Agentic</span></label>
                     <label class="disabled" id="smSemantic"><input type="checkbox" id="cbSemantic" value="semantic" disabled><span>Semantic</span></label>
                     <label class="disabled" id="smMetadata"><input type="checkbox" id="cbMetadata" value="metadata" disabled><span>Metadata</span></label>
                 </div>
@@ -865,7 +870,7 @@
     <!-- Folder Picker Modal -->
     <div class="modal-overlay" id="folderModal">
         <div class="modal">
-            <div class="modal-title">Select Folder</div>
+            <div class="modal-title">Select Folder & Model</div>
             <div class="folder-nav">
                 <button class="folder-nav-btn" id="folderUpBtn" onclick="navigateUp()">↑ Parent</button>
                 <span class="folder-current" id="folderModalPath">.</span>
@@ -873,9 +878,14 @@
             <div class="folder-list" id="folderList">
                 <div class="loading-text">Loading...</div>
             </div>
+            <div style="margin: 16px 0; padding: 12px; background: var(--bg-alt); border: 1px solid var(--border);">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-muted); margin-bottom: 8px;">Current Model</div>
+                <div style="font-size: 13px; color: var(--ink); margin-bottom: 8px;" id="currentModelDisplay">Loading...</div>
+                <button class="folder-nav-btn" onclick="openModelPicker()" style="width: 100%;">Change Model</button>
+            </div>
             <div class="folder-actions">
                 <button class="modal-btn secondary" onclick="closeFolderPicker()">Cancel</button>
-                <button class="modal-btn" onclick="selectCurrentFolder()">Select This Folder</button>
+                <button class="modal-btn" onclick="selectCurrentFolder()">Confirm</button>
             </div>
         </div>
     </div>
@@ -887,6 +897,19 @@
         </div>
     </div>
 
+    <!-- Model Picker Modal -->
+    <div class="modal-overlay" id="modelModal">
+        <div class="modal">
+            <div class="modal-title">Select Model</div>
+            <div class="folder-list" id="modelList">
+                <div class="loading-text">Loading...</div>
+            </div>
+            <div class="folder-actions">
+                <button class="modal-btn secondary" onclick="closeModelPicker()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // State
         let ws = null;
@@ -894,6 +917,81 @@
         let isRunning = false;
         let currentFolderPath = 'texts';
         let browsingPath = '.';
+        let currentModelNum = 4;  // 默认序号4
+
+        // Load settings from localStorage
+        function loadSettings() {
+            const savedFolder = localStorage.getItem('currentFolder');
+            const savedMode = localStorage.getItem('searchMode');
+            const savedModelNum = localStorage.getItem('currentModelNum');
+            
+            if (savedFolder) {
+                currentFolderPath = savedFolder;
+            }
+            
+            if (savedMode) {
+                const modeRadio = document.querySelector(`input[name="searchMode"][value="${savedMode}"]`);
+                if (modeRadio) {
+                    modeRadio.checked = true;
+                }
+            }
+            
+            if (savedModelNum) {
+                currentModelNum = parseInt(savedModelNum);
+            }
+        }
+
+        // Save settings to localStorage
+        function saveSettings() {
+            localStorage.setItem('currentFolder', currentFolderPath);
+            const selectedMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
+            localStorage.setItem('searchMode', selectedMode);
+            localStorage.setItem('currentModelNum', currentModelNum);
+        }
+
+        // Sync settings to backend
+        async function syncSettingsToBackend() {
+            try {
+                // 同步文件夹
+                const folderRes = await fetch('/api/set-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder_path: currentFolderPath })
+                });
+                const folderData = await folderRes.json();
+                if (folderData.success) {
+                    console.log(`✅ 已同步文件夹到后端: ${currentFolderPath}`);
+                }
+
+                // 同步模型
+                const modelRes = await fetch('/api/set-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_num: currentModelNum })
+                });
+                const modelData = await modelRes.json();
+                if (modelData.success) {
+                    console.log(`✅ 已同步模型到后端: ${modelData.model_name} (序号${currentModelNum})`);
+                    updateStatus(`就绪 | ${currentFolderPath} | ${modelData.model_name}`, '');
+                }
+            } catch (err) {
+                console.error('同步设置到后端失败:', err);
+                updateStatus('同步失败', 'error');
+            }
+        }
+
+        // Initialize on page load
+        async function initializeApp() {
+            loadSettings();
+            await syncSettingsToBackend();
+        }
+
+        // Handle search mode change
+        function onSearchModeChange() {
+            saveSettings();  // Save to localStorage
+            const selectedMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
+            console.log(`✅ 搜索模式已切换: ${selectedMode}`);
+        }
 
         // Elements
         const queryInput = document.getElementById('queryInput');
@@ -910,14 +1008,20 @@
         const folderUpBtn = document.getElementById('folderUpBtn');
         const indexingModal = document.getElementById('indexingModal');
         const indexingModalContent = document.getElementById('indexingModalContent');
+        const modelModal = document.getElementById('modelModal');
+        const modelList = document.getElementById('modelList');
 
         document.title = 'fs-explorer';
+
+        // Load settings on page load and sync to backend
+        initializeApp();
 
         // ========== Folder Picker ==========
         async function openFolderPicker() {
             folderModal.classList.add('active');
             browsingPath = currentFolderPath;
             await loadFolders(browsingPath);
+            await updateCurrentModelDisplay();
         }
 
         function closeFolderPicker() {
@@ -973,9 +1077,10 @@
 
         function selectCurrentFolder() {
             currentFolderPath = browsingPath;
+            saveSettings();  // Save to localStorage
             closeFolderPicker();
             
-            // 更新服务器端的工作目录
+            // 同步到后端
             fetch('/api/set-folder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -983,10 +1088,81 @@
             }).then(res => res.json()).then(data => {
                 if (data.success) {
                     console.log(`✅ 已切换到文件夹: ${currentFolderPath}`);
+                    updateStatus(`文件夹: ${currentFolderPath}`, '');
                 }
             }).catch(err => {
                 console.error('切换文件夹失败:', err);
             });
+        }
+
+        async function updateCurrentModelDisplay() {
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                if (data.success) {
+                    const currentModel = data.models.find(m => m.id === currentModelNum);
+                    if (currentModel) {
+                        document.getElementById('currentModelDisplay').textContent = currentModel.model_name;
+                    }
+                }
+            } catch (e) {
+                console.error('获取模型信息失败:', e);
+            }
+        }
+
+        // ========== Model Picker ==========
+        async function openModelPicker() {
+            modelModal.classList.add('active');
+            await loadModels();
+        }
+
+        function closeModelPicker() {
+            modelModal.classList.remove('active');
+        }
+
+        async function loadModels() {
+            modelList.innerHTML = '<div class="loading-text">Loading...</div>';
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+
+                if (!data.success || !data.models) {
+                    modelList.innerHTML = '<div class="folder-empty">无法加载模型列表</div>';
+                    return;
+                }
+
+                modelList.innerHTML = data.models.map(model => `
+                    <div class="folder-item ${model.id === currentModelNum ? 'selected' : ''}" onclick="selectModel(${model.id}, '${esc(model.model_name)}')">
+                        <span class="folder-icon">${model.id === currentModelNum ? '✓' : '○'}</span>
+                        <span class="folder-name">${esc(model.name)}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                modelList.innerHTML = `<div class="folder-empty">Error: ${esc(e.message)}</div>`;
+            }
+        }
+
+        async function selectModel(modelNum, modelName) {
+            currentModelNum = modelNum;
+            saveSettings();  // Save to localStorage
+            closeModelPicker();
+            
+            // 同步到后端
+            try {
+                const res = await fetch('/api/set-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_num: modelNum })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    console.log(`✅ 已切换到模型: ${modelName} (序号${modelNum})`);
+                    updateStatus(`模型: ${modelName}`, '');
+                    await updateCurrentModelDisplay();
+                }
+            } catch (err) {
+                console.error('切换模型失败:', err);
+            }
         }
 
         // ========== Indexing Modal ==========
@@ -1187,6 +1363,9 @@ print(calc_ratio(120, 80))
                 return;
             }
 
+            // 保存设置到 localStorage
+            saveSettings();
+
             // 获取选中的搜索模式
             const searchMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
 
@@ -1200,7 +1379,6 @@ print(calc_ratio(120, 80))
             firstChunk = true;
 
             // 清空左侧执行过程和右侧结果
-            //stepsList.innerHTML = '<div class="empty-state"><div class="prompt">处理中...</div><div class="hint">正在启动查询</div></div>';
             stepsList.innerHTML = '<div class="empty-state"><div class="prompt"></div><div class="hint"></div></div>';
             ensureStepsFiller();
             resultContent.innerHTML = '<div class="loading-text">等待结果...</div>';
@@ -1217,7 +1395,14 @@ print(calc_ratio(120, 80))
 
             ws.onopen = () => {
                 updateStatus('执行中', 'active');
-                ws.send(JSON.stringify({ question: query, mode: searchMode }));
+                console.log(`📤 发送查询 | 文件夹: ${currentFolderPath} | 模式: ${searchMode} | 模型序号: ${currentModelNum}`);
+                // 发送查询时同步所有设置（WebSocket 内部会再次同步到后端）
+                ws.send(JSON.stringify({ 
+                    question: query, 
+                    mode: searchMode,
+                    folder_path: currentFolderPath,
+                    model_num: currentModelNum
+                }));
             };
 
             ws.onmessage = (e) => {

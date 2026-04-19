@@ -6,7 +6,12 @@ from pydantic import BaseModel
 import json, re, os, shutil, subprocess
 from pathlib import Path
 from typing import List
-from rg_search_v6a import *
+import rg_search_v6a
+from rg_search_v6a import (
+    get_client, execute_grep, read_file_range, get_document_toc,
+    get_global_toc_summary, reset_search_cache, set_target_folder,
+    TOOLS_SCHEMA, SCRIPT_DIR, FILE_MAP, MODEL_DICT
+)
 from extract_toc.scanner import scan_folder
 
 app = FastAPI()
@@ -23,6 +28,9 @@ class FolderPathRequest(BaseModel):
 class IndexRequest(BaseModel):
     folder_path: str
 
+class ModelRequest(BaseModel):
+    model_name: str
+
 # ==================== Fast模式搜索函数 ====================
 def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list = None, 
                           search_dir: str = None, top_k: int = 15, context_lines: int = 0) -> str:
@@ -31,12 +39,13 @@ def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list
     改编自 rg-fast.py
     """
     if search_dir is None:
-        search_dir = str(TARGET)
+        search_dir = str(rg_search_v6a.TARGET)
     
     exact_keywords = exact_keywords or []
     all_keywords = broad_keywords + exact_keywords
     
     print(f"\n🔍 [Fast模式] 原始问题: {query}")
+    print(f"🔍 搜索目录: {search_dir}")
     print(f"🔍 关键词: 宽泛={broad_keywords}, 精确={exact_keywords}")
     
     # Step 1: RG 搜索收集匹配行
@@ -171,6 +180,9 @@ async def run_tool(func, **kwargs):
 @app.get("/")
 async def index(): return FileResponse('index_v6a.html')
 
+class ModelRequest(BaseModel):
+    model_num: int
+
 @app.post("/api/set-folder")
 async def set_folder(request: FolderPathRequest):
     """设置工作文件夹路径"""
@@ -185,19 +197,74 @@ async def set_folder(request: FolderPathRequest):
         
         set_target_folder(str(folder_path))
         
-        print(f"📁 工作文件夹已更新: {TARGET}")
-        print(f"📄 找到 {len(FILE_MAP)} 个文件")
+        print(f"📁 工作文件夹已更新: {rg_search_v6a.TARGET}")
+        print(f"📄 找到 {len(rg_search_v6a.FILE_MAP)} 个文件")
         
         return JSONResponse({
             "success": True, 
             "message": f"已设置文件夹: {folder_path}",
-            "file_count": len(FILE_MAP),
-            "files": list(FILE_MAP.keys())
+            "file_count": len(rg_search_v6a.FILE_MAP),
+            "files": list(rg_search_v6a.FILE_MAP.keys())
         })
     
     except Exception as e:
         print(f"❌ 设置文件夹失败: {e}")
         return JSONResponse({"success": False, "message": f"设置文件夹失败: {str(e)}"}, status_code=500)
+
+@app.post("/api/set-model")
+async def set_model(request: ModelRequest):
+    """设置模型"""
+    try:
+        from rg_search_v6a import MODEL_DICT
+        
+        if request.model_num not in MODEL_DICT:
+            return JSONResponse({
+                "success": False, 
+                "message": f"无效的模型序号: {request.model_num}"
+            }, status_code=400)
+        
+        rg_search_v6a.num = request.model_num
+        model_name = MODEL_DICT[request.model_num]["model_name"]
+        print(f"🤖 模型已更新: {model_name} (序号: {request.model_num})")
+        
+        # 重置 CLIENT 以使用新模型
+        rg_search_v6a.CLIENT = None
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"已设置模型: {model_name}",
+            "model_num": request.model_num,
+            "model_name": model_name
+        })
+    
+    except Exception as e:
+        print(f"❌ 设置模型失败: {e}")
+        return JSONResponse({"success": False, "message": f"设置模型失败: {str(e)}"}, status_code=500)
+
+@app.get("/api/models")
+async def get_models():
+    """获取可用模型列表"""
+    try:
+        from rg_search_v6a import MODEL_DICT, num as current_num
+        
+        models = [
+            {
+                "id": num_key,
+                "name": f"{info['model_name']} (序号{num_key})",
+                "model_name": info['model_name']
+            }
+            for num_key, info in MODEL_DICT.items()
+        ]
+        
+        return JSONResponse({
+            "success": True,
+            "models": models,
+            "current": current_num
+        })
+    
+    except Exception as e:
+        print(f"❌ 获取模型列表失败: {e}")
+        return JSONResponse({"success": False, "message": f"获取模型列表失败: {str(e)}"}, status_code=500)
 
 @app.get("/api/folders")
 async def get_folders(path: str = "."):
@@ -295,13 +362,11 @@ async def index_folder_endpoint(request: IndexRequest):
         
         print(f"✅ 索引生成完成: {len(index_files)} 个文件")
         
-        # 如果是当前工作目录，更新全局变量
-        global TARGET, INDEX_DIR, MAIN_INDEX, FILE_MAP, DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE
-        if folder_path == TARGET or str(folder_path) == str(TARGET):
-            INDEX_DIR = index_dir
-            MAIN_INDEX = main_index
-            DETAIL_TOC_CACHE = {}
-            SEARCH_RESULT_CACHE = {}
+        # 如果是当前工作目录，重新加载索引
+        if str(folder_path) == str(rg_search_v6a.TARGET):
+            # 重新设置目标文件夹以刷新索引
+            set_target_folder(str(folder_path))
+            print(f"🔄 已刷新当前工作目录的索引")
         
         return JSONResponse({
             "success": True,
@@ -325,9 +390,29 @@ async def query(ws: WebSocket):
         print(f"📩 收到消息: {data}")
         question = data.get('question', '')
         mode = data.get('mode', 'agentic')  # 默认agentic模式
+        folder_path = data.get('folder_path', 'texts')
+        model_num = data.get('model_num', None)
         
         if not question: 
             return await ws.send_json({'type': 'error', 'data': {'message': '问题不能为空'}})
+        
+        # 同步文件夹设置
+        try:
+            folder_full_path = SCRIPT_DIR / folder_path if folder_path != "." else SCRIPT_DIR
+            if folder_full_path.exists() and folder_full_path.is_dir():
+                set_target_folder(str(folder_full_path))
+                print(f"📁 已同步工作文件夹: {rg_search_v6a.TARGET}")
+                print(f"📄 文件数量: {len(rg_search_v6a.FILE_MAP)}")
+        except Exception as e:
+            print(f"⚠️ 同步文件夹失败: {e}")
+        
+        # 同步模型设置
+        if model_num is not None:
+            from rg_search_v6a import MODEL_DICT
+            if model_num in MODEL_DICT:
+                rg_search_v6a.num = model_num
+                rg_search_v6a.CLIENT = None  # 重置 CLIENT
+                print(f"🤖 已同步模型: {MODEL_DICT[model_num]['model_name']} (序号: {model_num})")
         
         print(f"🔧 使用模式: {mode}")
         
@@ -344,7 +429,10 @@ async def query(ws: WebSocket):
 
 async def query_fast_mode(ws: WebSocket, question: str):
     """Fast模式查询"""
-    print("\n[Fast模式] 开始查询")
+    current_model = MODEL_DICT[rg_search_v6a.num]["model_name"]
+    print(f"\n[Fast模式] 开始查询")
+    print(f"🤖 使用模型: {current_model} (序号{rg_search_v6a.num})")
+    print(f"📁 搜索目录: {rg_search_v6a.TARGET}")
     
     system_prompt = """你是文档检索专家。
 
@@ -369,7 +457,7 @@ async def query_fast_mode(ws: WebSocket, question: str):
     
     try:
         response = await create_chat_completion(
-            model=MODEL_NAME, 
+            model=MODEL_DICT[rg_search_v6a.num]["model_name"], 
             messages=messages, 
             tools=TOOLS_FAST, 
             tool_choice="auto", 
@@ -409,7 +497,7 @@ async def query_fast_mode(ws: WebSocket, question: str):
                 query=args.get("query", question),
                 broad_keywords=args.get("broad_keywords", []),
                 exact_keywords=args.get("exact_keywords", []),
-                search_dir=str(TARGET),
+                search_dir=str(rg_search_v6a.TARGET),
                 top_k=10,
                 context_lines=10
             )
@@ -442,7 +530,7 @@ async def query_fast_mode(ws: WebSocket, question: str):
     
     def generator():
         stream = get_client().chat.completions.create(
-            model=MODEL_NAME,
+            model=MODEL_DICT[rg_search_v6a.num]["model_name"],
             messages=messages_2,
             temperature=1,
             stream=True
@@ -476,6 +564,11 @@ async def query_agentic_mode(ws: WebSocket, question: str):
     """Agentic模式查询（流式输出思考过程和最终答案）"""
     reset_search_cache()  # 重置搜索缓存
     
+    current_model = MODEL_DICT[rg_search_v6a.num]["model_name"]
+    print(f"\n[Agentic模式] 开始查询")
+    print(f"🤖 使用模型: {current_model} (序号{rg_search_v6a.num})")
+    print(f"📁 搜索目录: {rg_search_v6a.TARGET}")
+    
     messages = [
         {"role": "system", "content": f"你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。\n\n【资料库全局目录】\n{get_global_toc_summary()}\n\n【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)\n【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 "},
         {"role": "user", "content": question}
@@ -487,7 +580,7 @@ async def query_agentic_mode(ws: WebSocket, question: str):
         await asyncio.sleep(0)
         
         try:
-            response = await create_chat_completion(model=MODEL_NAME, messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto", temperature=1)
+            response = await create_chat_completion(model=MODEL_DICT[rg_search_v6a.num]["model_name"], messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto", temperature=1)
         except Exception as e:
             print(f"❌ API错误: {e}")
             return await ws.send_json({'type': 'error', 'data': {'message': f'API错误: {e}'}})
@@ -538,7 +631,7 @@ async def stream_final_answer(ws: WebSocket, messages: list):
     
     def stream_gen():
         stream = get_client().chat.completions.create(
-            model=MODEL_NAME,
+            model=MODEL_DICT[rg_search_v6a.num]["model_name"],
             messages=messages,
             temperature=1,
             stream=True
@@ -570,5 +663,9 @@ async def stream_final_answer(ws: WebSocket, messages: list):
 
 if __name__ == '__main__':
     import uvicorn
-    print(f"\n🤖 模型: {MODEL_NAME} | 📁 文档: {len(FILE_MAP)} | 🌐 http://localhost:5000\n")
+    model_name = MODEL_DICT[rg_search_v6a.num]["model_name"]
+    print(f"\n🤖 模型: {model_name} (序号{rg_search_v6a.num})")
+    print(f"📁 目标文件夹: {rg_search_v6a.TARGET}")
+    print(f"� 文档数量: {len(rg_search_v6a.FILE_MAP)}")
+    print(f"🌐 服务地址: http://localhost:5000\n")
     uvicorn.run(app, host='0.0.0.0', port=5000)
