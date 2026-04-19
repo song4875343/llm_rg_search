@@ -21,7 +21,7 @@ Qwen/Qwen3.5-122B-A10B
 moonshotai/Kimi-K2.5
 总的来讲qwen的或者原生的都行，英伟达的不太好
 '''
-index=4
+index=1
 # ================= 配置区 =================
 model_dict={1:{'factory_name':'kimi','base_url':'https://api.moonshot.cn/v1','api_key':'kimi_key','model_name':'kimi-k2.5'},
             2:{'factory_name':'nvidia','base_url':'https://integrate.api.nvidia.com/v1','api_key':'nvidia_key','model_name':'minimaxai/minimax-m2.5'},
@@ -222,7 +222,8 @@ def run_agent(user_question: str):
                 messages=messages,
                 tools=TOOLS_SCHEMA,
                 tool_choice="auto",
-                temperature=0.1
+                # temperature=0.1,
+                temperature=1,
             )
         except Exception as e:
             print(f"API Error: {e}")
@@ -266,7 +267,8 @@ def run_agent(user_question: str):
             model=MODEL_NAME,
             messages=messages,
             # tools=TOOLS_SCHEMA, # 注释掉工具，防止模型继续调用
-            temperature=0.3
+            # temperature=0.3,
+            temperature=1,
         )
         print(f"\n✅ [最终回答 (强制输出)]:\n{final_response.choices[0].message.content}")
     except Exception as e:
@@ -276,8 +278,10 @@ def run_agent(user_question: str):
 if __name__ == "__main__":
     # run_agent("何时需要设置拦风绳")
     # run_agent("门刚的伸缩缝距离")
-    run_agent("筏板的最小厚度")
+    # run_agent("筏板的最小厚度")
     # run_agent("基础的宽高比")
     # run_agent("各种结构何时不需要计算温度工况")
     # run_agent("钢柱的长细比要求")
     # run_agent("高层框架结构的一般要求中抗震缝的相关要求")
+    
+    run_agent("门刚什么时候应设置拦风绳")

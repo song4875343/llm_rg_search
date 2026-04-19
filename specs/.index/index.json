@@ -1,0 +1,162 @@
+{
+  "scan_time": "2026-04-19T10:59:01.357555",
+  "root_folder": "E:\\desktop\\llm_rg_search\\specs",
+  "recursive": true,
+  "folders": {
+    "root": {
+      "path": "E:\\desktop\\llm_rg_search\\specs",
+      "files": {
+        "1建筑结构荷载规范[附条文说明].txt": {
+          "name": "1建筑结构荷载规范[附条文说明].txt",
+          "type": "text",
+          "size": 177049,
+          "modified": "2025-08-13T19:20:24.048424",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "1建筑结构荷载规范[附条文说明].index.json"
+        },
+        "2建筑抗震设计规范[附条文说明].txt": {
+          "name": "2建筑抗震设计规范[附条文说明].txt",
+          "type": "text",
+          "size": 633435,
+          "modified": "2025-08-04T19:30:42.314210",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "2建筑抗震设计规范[附条文说明].index.json"
+        },
+        "3建筑地基基础设计规范[附条文说明].txt": {
+          "name": "3建筑地基基础设计规范[附条文说明].txt",
+          "type": "text",
+          "size": 418478,
+          "modified": "2025-08-04T19:30:42.520851",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "3建筑地基基础设计规范[附条文说明].index.json"
+        },
+        "4混凝土结构设计规范[附条文说明].txt": {
+          "name": "4混凝土结构设计规范[附条文说明].txt",
+          "type": "text",
+          "size": 444903,
+          "modified": "2025-08-13T19:20:24.048424",
+          "total_chapters": 2,
+          "chapter_summary": [],
+          "detail_index": "4混凝土结构设计规范[附条文说明].index.json"
+        },
+        "5钢结构设计标准[附条文说明].txt": {
+          "name": "5钢结构设计标准[附条文说明].txt",
+          "type": "text",
+          "size": 560824,
+          "modified": "2025-08-04T19:30:43.153826",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "5钢结构设计标准[附条文说明].index.json"
+        },
+        "6砌体结构设计规范[附条文说明].txt": {
+          "name": "6砌体结构设计规范[附条文说明].txt",
+          "type": "text",
+          "size": 259326,
+          "modified": "2025-08-04T19:30:43.297590",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "6砌体结构设计规范[附条文说明].index.json"
+        },
+        "7高层建筑混凝土结构技术规程[附条文说明].txt": {
+          "name": "7高层建筑混凝土结构技术规程[附条文说明].txt",
+          "type": "text",
+          "size": 453994,
+          "modified": "2025-08-04T19:30:43.556487",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "7高层建筑混凝土结构技术规程[附条文说明].index.json"
+        },
+        "8建筑地基处理技术规范[附条文说明].txt": {
+          "name": "8建筑地基处理技术规范[附条文说明].txt",
+          "type": "text",
+          "size": 563870,
+          "modified": "2025-08-04T19:30:43.695734",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "8建筑地基处理技术规范[附条文说明].index.json"
+        },
+        "9建筑桩基技术规范[附条文说明].txt": {
+          "name": "9建筑桩基技术规范[附条文说明].txt",
+          "type": "text",
+          "size": 200868,
+          "modified": "2025-08-04T19:30:43.854870",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "9建筑桩基技术规范[附条文说明].index.json"
+        },
+        "工程结构通用规范.txt": {
+          "name": "工程结构通用规范.txt",
+          "type": "text",
+          "size": 76079,
+          "modified": "2025-08-04T19:30:44.065494",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "工程结构通用规范.index.json"
+        },
+        "建筑与市政地基基础通用规范.txt": {
+          "name": "建筑与市政地基基础通用规范.txt",
+          "type": "text",
+          "size": 104182,
+          "modified": "2025-08-04T19:30:44.304208",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "建筑与市政地基基础通用规范.index.json"
+        },
+        "建筑与市政工程抗震通用规范.txt": {
+          "name": "建筑与市政工程抗震通用规范.txt",
+          "type": "text",
+          "size": 146788,
+          "modified": "2025-08-04T19:30:44.585501",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "建筑与市政工程抗震通用规范.index.json"
+        },
+        "木结构通用规范.txt": {
+          "name": "木结构通用规范.txt",
+          "type": "text",
+          "size": 56760,
+          "modified": "2025-02-18T20:32:19.826926",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "木结构通用规范.index.json"
+        },
+        "砌体结构通用规范.txt": {
+          "name": "砌体结构通用规范.txt",
+          "type": "text",
+          "size": 60120,
+          "modified": "2025-08-04T19:30:45.004620",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "砌体结构通用规范.index.json"
+        },
+        "钢结构通用规范.txt": {
+          "name": "钢结构通用规范.txt",
+          "type": "text",
+          "size": 82837,
+          "modified": "2025-08-04T19:30:45.239472",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "钢结构通用规范.index.json"
+        },
+        "门式刚架轻型房屋钢结构技术规范.txt": {
+          "name": "门式刚架轻型房屋钢结构技术规范.txt",
+          "type": "text",
+          "size": 148724,
+          "modified": "2025-08-04T19:30:45.756083",
+          "total_chapters": 0,
+          "chapter_summary": [],
+          "detail_index": "门式刚架轻型房屋钢结构技术规范.index.json"
+        }
+      }
+    }
+  },
+  "summary": {
+    "total_folders": 1,
+    "total_files": 16,
+    "total_chapters": 2,
+    "index_directory": "E:\\desktop\\llm_rg_search\\specs\\.index"
+  }
+}

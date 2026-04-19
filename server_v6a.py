@@ -183,19 +183,7 @@ async def set_folder(request: FolderPathRequest):
         if not folder_path.is_dir():
             return JSONResponse({"success": False, "message": "路径不是文件夹"}, status_code=400)
         
-        # 更新全局变量
-        global TARGET, INDEX_DIR, MAIN_INDEX, FILE_MAP, DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE
-        TARGET = folder_path
-        INDEX_DIR = TARGET / ".index"
-        MAIN_INDEX = INDEX_DIR / "index.json"
-        
-        # 重新扫描文件
-        FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) 
-                    if (TARGET / f).is_file() and f.endswith((".txt", ".md"))}
-        
-        # 清空缓存
-        DETAIL_TOC_CACHE = {}
-        SEARCH_RESULT_CACHE = {}
+        set_target_folder(str(folder_path))
         
         print(f"📁 工作文件夹已更新: {TARGET}")
         print(f"📄 找到 {len(FILE_MAP)} 个文件")
@@ -448,21 +436,45 @@ async def query_fast_mode(ws: WebSocket, question: str):
         {"role": "user", "content": question}
     ]
     
-    final_response = await create_chat_completion(
-        model=MODEL_NAME,
-        messages=messages_2,
-        temperature=1
-    )
+    # 流式输出 - 用线程边产生边发送
+    loop = asyncio.get_event_loop()
+    full_content = ""
     
-    answer = final_response.choices[0].message.content
-    print(f"✅ [最终答案]: {answer[:100]}...")
-    await ws.send_json({'type': 'final_answer', 'data': {'content': answer}})
+    def generator():
+        stream = get_client().chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages_2,
+            temperature=1,
+            stream=True
+        )
+        for chunk in stream:
+            yield chunk
+    
+    gen = generator()
+    
+    def get_next():
+        try:
+            return next(gen)
+        except StopIteration:
+            return None
+    
+    while True:
+        chunk = await loop.run_in_executor(None, get_next)
+        if chunk is None:
+            break
+        if chunk.choices and chunk.choices[0].delta.content:
+            content = chunk.choices[0].delta.content
+            full_content += content
+            await ws.send_json({'type': 'stream_chunk', 'data': {'content': content}})
+            await asyncio.sleep(0)
+    
+    print(f"✅ [最终答案]: {full_content[:100]}...")
+    await ws.send_json({'type': 'final_answer', 'data': {'content': full_content}})
     await ws.close()
 
 async def query_agentic_mode(ws: WebSocket, question: str):
-    """Agentic模式查询（原有逻辑）"""
-    global SEARCH_RESULT_CACHE
-    SEARCH_RESULT_CACHE = {}
+    """Agentic模式查询（流式输出思考过程和最终答案）"""
+    reset_search_cache()  # 重置搜索缓存
     
     messages = [
         {"role": "system", "content": f"你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。\n\n【资料库全局目录】\n{get_global_toc_summary()}\n\n【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)\n【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 "},
@@ -483,6 +495,7 @@ async def query_agentic_mode(ws: WebSocket, question: str):
         msg = response.choices[0].message
         messages.append(msg)
         
+        # 流式发送思考过程
         if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
             print(f"🧠 [思考]: {msg.reasoning_content[:100]}...")
             await ws.send_json({'type': 'thinking', 'data': {'content': msg.reasoning_content}})
@@ -508,14 +521,51 @@ async def query_agentic_mode(ws: WebSocket, question: str):
                     await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc.id, 'summary': summary}})
                     messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
         else:
-            print(f"✅ [最终答案]: {msg.content[:100]}...")
-            await ws.send_json({'type': 'final_answer', 'data': {'content': msg.content}})
-            await ws.close()
+            # 最终答案流式输出
+            print(f"✅ [最终答案] 流式输出中...")
+            await stream_final_answer(ws, messages)
             return
     
     messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
-    final = await create_chat_completion(model=MODEL_NAME, messages=messages, temperature=1)
-    await ws.send_json({'type': 'final_answer', 'data': {'content': final.choices[0].message.content}})
+    # 最终答案流式输出
+    await stream_final_answer(ws, messages)
+
+
+async def stream_final_answer(ws: WebSocket, messages: list):
+    """流��输出最终答案"""
+    loop = asyncio.get_event_loop()
+    full_content = ""
+    
+    def stream_gen():
+        stream = get_client().chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=1,
+            stream=True
+        )
+        for chunk in stream:
+            yield chunk
+    
+    gen = stream_gen()
+    
+    def get_next():
+        try:
+            return next(gen)
+        except StopIteration:
+            return None
+    
+    while True:
+        chunk = await loop.run_in_executor(None, get_next)
+        if chunk is None:
+            break
+        if chunk.choices and chunk.choices[0].delta.content:
+            content = chunk.choices[0].delta.content
+            full_content += content
+            await ws.send_json({'type': 'stream_chunk', 'data': {'content': content}})
+            await asyncio.sleep(0)
+    
+    print(f"✅ [最终答案]: {full_content[:100]}...")
+    await ws.send_json({'type': 'final_answer', 'data': {'content': full_content}})
     await ws.close()
 
 if __name__ == '__main__':

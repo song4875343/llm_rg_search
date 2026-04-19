@@ -1196,6 +1196,8 @@ print(calc_ratio(120, 80))
             stepCount = 0;
             queryBtn.disabled = true;
             setResultPanelState(false);
+            streamMarkdown = '';  // 清空流式缓存
+            firstChunk = true;
 
             // 清空左侧执行过程和右侧结果
             //stepsList.innerHTML = '<div class="empty-state"><div class="prompt">处理中...</div><div class="hint">正在启动查询</div></div>';
@@ -1249,6 +1251,9 @@ print(calc_ratio(120, 80))
                     break;
                 case 'answer':
                     showAnswer(msg.data);
+                    break;
+                case 'stream_chunk':
+                    appendStreamChunk(msg.data.content);
                     break;
                 case 'final_answer':
                     showFinalAnswer(msg.data);
@@ -1384,6 +1389,26 @@ print(calc_ratio(120, 80))
             setResultPanelState(false);
         }
 
+        let streamMarkdown = "";
+        let firstChunk = true;
+        function appendStreamChunk(content) {
+            // 第一个chunk时先清空加载状态并滚动到整个页面顶部
+            if (firstChunk) {
+                resultContent.innerHTML = '<div class="result-text"></div>';
+                setResultPanelState(false);
+                firstChunk = false;
+                
+                // 强制渲染后滚动到顶部
+                requestAnimationFrame(() => window.scrollTo(0, 0));
+            }
+            
+            streamMarkdown += content;
+            resultContent.querySelector('.result-text').innerHTML = renderMarkdown(streamMarkdown);
+            
+            // 滚动到新内容下方约3行
+            requestAnimationFrame(() => window.scrollBy(0, 60));
+        }
+
         // Show final answer
         function showFinalAnswer(data) {
             // 移除所有呼吸动画
@@ -1391,7 +1416,9 @@ print(calc_ratio(120, 80))
                 el.classList.remove('active');
             });
             
-            resultContent.innerHTML = `<div class="result-text">${renderMarkdown(data.content)}</div>`;
+            // 使用流式累积的内容，避免重复渲染
+            const content = streamMarkdown || data.content;
+            resultContent.innerHTML = `<div class="result-text">${renderMarkdown(content)}</div>`;
             updateStatus('完成', '');
             scrollProcessToLatest();
         }

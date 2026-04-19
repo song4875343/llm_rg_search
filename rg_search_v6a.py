@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
-num=6 #选择的模型序号
+num=1 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
@@ -26,6 +26,19 @@ TARGET, INDEX_DIR = SCRIPT_DIR / "texts", SCRIPT_DIR / "texts" / ".index"
 MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (SCRIPT_DIR / "rg.exe").exists() else "rg")
 FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) if (TARGET / f).is_file() and f.endswith((".txt", ".md"))} if TARGET.exists() else {}
 DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE, CLIENT = {}, {}, None
+
+def reset_search_cache():
+    global SEARCH_RESULT_CACHE
+    SEARCH_RESULT_CACHE = {}
+
+def set_target_folder(folder_path: str):
+    global TARGET, INDEX_DIR, MAIN_INDEX, FILE_MAP
+    TARGET = Path(folder_path)
+    INDEX_DIR = TARGET / ".index"
+    MAIN_INDEX = INDEX_DIR / "index.json"
+    FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) 
+                if (TARGET / f).is_file() and f.endswith((".txt", ".md"))}
+    reset_search_cache()
 
 
 # ==================== 基础工具函数 ====================
@@ -229,5 +242,5 @@ def run_agent(user_question, show_reasoning=False):
 
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
-    run_agent("独立基础的宽高比")
+    run_agent("门刚什么时候应设置揽风绳")
     # run_agent('目录有哪几个文件',show_reasoning=True)
