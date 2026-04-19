@@ -17,8 +17,9 @@ MODEL_DICT = {
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
     3: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-235B-A22B-Instruct-2507'},
     4: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3.5-27B'},
-    5: {'base_url': 'http://localhost:11434/v1', 'api_key': 'ollama', 'model_name': 'gemma4:e4b'},
-    6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'kimi-k2.5:cloud'},
+    5: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-30B-A3B-Instruct-2507'},
+    6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'gemma4:31b-cloud'},
+    7: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'kimi-k2.5:cloud'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10
