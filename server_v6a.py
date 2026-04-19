@@ -451,42 +451,121 @@ async def query_fast_mode(ws: WebSocket, question: str):
         {"role": "user", "content": question}
     ]
     
-    # 第一轮：LLM 调用工具
+    # 第一轮：LLM 调用工具（流式获取思考过程）
     await ws.send_json({'type': 'turn', 'data': {'turn': 1}})
     await asyncio.sleep(0)
     
     try:
-        response = await create_chat_completion(
-            model=MODEL_DICT[rg_search_v6a.num]["model_name"], 
-            messages=messages, 
-            tools=TOOLS_FAST, 
-            tool_choice="auto", 
-            temperature=1
-        )
+        # 使用流式API获取思考过程
+        loop = asyncio.get_event_loop()
+        thinking_id = 'thinking-1'
+        
+        def stream_gen():
+            stream = get_client().chat.completions.create(
+                model=MODEL_DICT[rg_search_v6a.num]["model_name"],
+                messages=messages,
+                tools=TOOLS_FAST,
+                tool_choice="auto",
+                temperature=1,
+                stream=True,
+                stream_options={"include_usage": True}
+            )
+            for chunk in stream:
+                yield chunk
+        
+        gen = stream_gen()
+        
+        def get_next():
+            try:
+                return next(gen)
+            except StopIteration:
+                return None
+        
+        # 收集完整响应
+        full_reasoning = ""
+        tool_calls_data = {}
+        
+        while True:
+            chunk = await loop.run_in_executor(None, get_next)
+            if chunk is None:
+                break
+            
+            # 检查 choices 是否存在
+            if not chunk.choices or len(chunk.choices) == 0:
+                continue
+            
+            choice = chunk.choices[0]
+            
+            # 流式发送思考内容
+            if hasattr(choice.delta, 'reasoning_content') and choice.delta.reasoning_content:
+                reasoning_chunk = choice.delta.reasoning_content
+                full_reasoning += reasoning_chunk
+                await ws.send_json({
+                    'type': 'thinking_chunk',
+                    'data': {
+                        'thinking_id': thinking_id,
+                        'content': reasoning_chunk
+                    }
+                })
+                await asyncio.sleep(0)
+            
+            # 收集工具调用
+            if hasattr(choice.delta, 'tool_calls') and choice.delta.tool_calls:
+                for tc_delta in choice.delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_data:
+                        tool_calls_data[idx] = {
+                            'id': tc_delta.id or '',
+                            'function_name': '',
+                            'arguments': ''
+                        }
+                    if tc_delta.id:
+                        tool_calls_data[idx]['id'] = tc_delta.id
+                    if tc_delta.function and tc_delta.function.name:
+                        tool_calls_data[idx]['function_name'] = tc_delta.function.name
+                    if tc_delta.function and tc_delta.function.arguments:
+                        tool_calls_data[idx]['arguments'] += tc_delta.function.arguments
+        
+        # 完成思考步骤
+        if full_reasoning:
+            print(f"🧠 [思考]: {full_reasoning[:100]}...")
+            await ws.send_json({
+                'type': 'thinking_complete',
+                'data': {'thinking_id': thinking_id}
+            })
+            await asyncio.sleep(0)
+        
+        # 重建工具调用
+        tool_calls = []
+        for idx in sorted(tool_calls_data.keys()):
+            tc_data = tool_calls_data[idx]
+            tool_calls.append({
+                'id': tc_data['id'],
+                'function': {
+                    'name': tc_data['function_name'],
+                    'arguments': tc_data['arguments']
+                }
+            })
+    
     except Exception as e:
         print(f"❌ API错误: {e}")
         return await ws.send_json({'type': 'error', 'data': {'message': f'API错误: {e}'}})
     
-    msg = response.choices[0].message
+    msg_tool_calls = tool_calls
     
-    if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
-        print(f"🧠 [思考]: {msg.reasoning_content[:100]}...")
-        await ws.send_json({'type': 'thinking', 'data': {'content': msg.reasoning_content}})
-        await asyncio.sleep(0)
-    
-    if not msg.tool_calls:
+    if not msg_tool_calls:
         print("⚠️ LLM 未生成关键词")
         await ws.send_json({'type': 'final_answer', 'data': {'content': '无法生成搜索关键词'}})
         await ws.close()
         return
     
     tool_results = []
-    for tc in msg.tool_calls:
-        if tc.function.name == "search_documents":
-            args = json.loads(tc.function.arguments)
+    for tc in msg_tool_calls:
+        if tc['function']['name'] == "search_documents":
+            args = json.loads(tc['function']['arguments'])
             print(f"🔧 [工具调用] search_documents: {args}")
             await ws.send_json({'type': 'tool_call', 'data': {
-                'tool_call_id': tc.id, 
+                'tool_call_id': tc['id'], 
                 'tool_name': 'search_documents', 
                 'arguments': args
             }})
@@ -504,15 +583,15 @@ async def query_fast_mode(ws: WebSocket, question: str):
             
             summary = '❌ 未找到匹配' if '未找到匹配内容' in result else f'✅ 搜索完成'
             print(f"📤 [发送结果] {summary}")
-            await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc.id, 'summary': summary}})
+            await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc['id'], 'summary': summary}})
             
             tool_results.append({
                 "role": "tool",
-                "tool_call_id": tc.id,
+                "tool_call_id": tc['id'],
                 "content": result
             })
     
-    # 第二轮：LLM 生成答案
+    # 第二轮：LLM 生成答案（流式输出思考+答案）
     await ws.send_json({'type': 'turn', 'data': {'turn': 2}})
     await asyncio.sleep(0)
     
@@ -524,16 +603,19 @@ async def query_fast_mode(ws: WebSocket, question: str):
         {"role": "user", "content": question}
     ]
     
-    # 流式输出 - 用线程边产生边发送
+    # 流式输出思考过程和答案
     loop = asyncio.get_event_loop()
     full_content = ""
+    full_reasoning_2 = ""
+    thinking_id_2 = 'thinking-2'
     
     def generator():
         stream = get_client().chat.completions.create(
             model=MODEL_DICT[rg_search_v6a.num]["model_name"],
             messages=messages_2,
             temperature=1,
-            stream=True
+            stream=True,
+            stream_options={"include_usage": True}
         )
         for chunk in stream:
             yield chunk
@@ -550,11 +632,40 @@ async def query_fast_mode(ws: WebSocket, question: str):
         chunk = await loop.run_in_executor(None, get_next)
         if chunk is None:
             break
-        if chunk.choices and chunk.choices[0].delta.content:
-            content = chunk.choices[0].delta.content
+        
+        # 检查 choices 是否存在
+        if not chunk.choices or len(chunk.choices) == 0:
+            continue
+        
+        choice = chunk.choices[0]
+        
+        # 流式发送思考内容
+        if hasattr(choice.delta, 'reasoning_content') and choice.delta.reasoning_content:
+            reasoning_chunk = choice.delta.reasoning_content
+            full_reasoning_2 += reasoning_chunk
+            await ws.send_json({
+                'type': 'thinking_chunk',
+                'data': {
+                    'thinking_id': thinking_id_2,
+                    'content': reasoning_chunk
+                }
+            })
+            await asyncio.sleep(0)
+        
+        # 流式发送答案内容
+        if hasattr(choice.delta, 'content') and choice.delta.content:
+            content = choice.delta.content
             full_content += content
             await ws.send_json({'type': 'stream_chunk', 'data': {'content': content}})
             await asyncio.sleep(0)
+    
+    # 完成思考步骤
+    if full_reasoning_2:
+        await ws.send_json({
+            'type': 'thinking_complete',
+            'data': {'thinking_id': thinking_id_2}
+        })
+        await asyncio.sleep(0)
     
     print(f"✅ [最终答案]: {full_content[:100]}...")
     await ws.send_json({'type': 'final_answer', 'data': {'content': full_content}})
@@ -580,39 +691,161 @@ async def query_agentic_mode(ws: WebSocket, question: str):
         await asyncio.sleep(0)
         
         try:
-            response = await create_chat_completion(model=MODEL_DICT[rg_search_v6a.num]["model_name"], messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto", temperature=1)
+            # 使用流式API获取思考过程
+            loop = asyncio.get_event_loop()
+            thinking_id = f'thinking-agentic-{turn + 1}'
+            
+            def stream_gen():
+                stream = get_client().chat.completions.create(
+                    model=MODEL_DICT[rg_search_v6a.num]["model_name"],
+                    messages=messages,
+                    tools=TOOLS_SCHEMA,
+                    tool_choice="auto",
+                    temperature=1,
+                    stream=True,
+                    stream_options={"include_usage": True}
+                )
+                for chunk in stream:
+                    yield chunk
+            
+            gen = stream_gen()
+            
+            def get_next():
+                try:
+                    return next(gen)
+                except StopIteration:
+                    return None
+            
+            # 收集完整响应
+            full_reasoning = ""
+            full_content = ""
+            tool_calls_data = {}
+            finish_reason = None
+            
+            while True:
+                chunk = await loop.run_in_executor(None, get_next)
+                if chunk is None:
+                    break
+                
+                # 检查 choices 是否存在
+                if not chunk.choices or len(chunk.choices) == 0:
+                    continue
+                
+                choice = chunk.choices[0]
+                
+                # 流式发送思考内容
+                if hasattr(choice.delta, 'reasoning_content') and choice.delta.reasoning_content:
+                    reasoning_chunk = choice.delta.reasoning_content
+                    full_reasoning += reasoning_chunk
+                    await ws.send_json({
+                        'type': 'thinking_chunk',
+                        'data': {
+                            'thinking_id': thinking_id,
+                            'content': reasoning_chunk
+                        }
+                    })
+                    await asyncio.sleep(0)
+                
+                # 收集工具调用
+                if hasattr(choice.delta, 'tool_calls') and choice.delta.tool_calls:
+                    for tc_delta in choice.delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in tool_calls_data:
+                            tool_calls_data[idx] = {
+                                'id': tc_delta.id or '',
+                                'function_name': '',
+                                'arguments': ''
+                            }
+                        if tc_delta.id:
+                            tool_calls_data[idx]['id'] = tc_delta.id
+                        if tc_delta.function and tc_delta.function.name:
+                            tool_calls_data[idx]['function_name'] = tc_delta.function.name
+                        if tc_delta.function and tc_delta.function.arguments:
+                            tool_calls_data[idx]['arguments'] += tc_delta.function.arguments
+                
+                # 收集内容（用于判断是否是最终答案）
+                if hasattr(choice.delta, 'content') and choice.delta.content:
+                    full_content += choice.delta.content
+                
+                # 获取结束原因
+                if hasattr(choice, 'finish_reason') and choice.finish_reason:
+                    finish_reason = choice.finish_reason
+            
+            # 完成思考步骤
+            if full_reasoning:
+                print(f"🧠 [思考]: {full_reasoning[:100]}...")
+                await ws.send_json({
+                    'type': 'thinking_complete',
+                    'data': {'thinking_id': thinking_id}
+                })
+                await asyncio.sleep(0)
+            
+            # 重建工具调用
+            tool_calls = []
+            for idx in sorted(tool_calls_data.keys()):
+                tc_data = tool_calls_data[idx]
+                tool_calls.append({
+                    'id': tc_data['id'],
+                    'type': 'function',
+                    'function': {
+                        'name': tc_data['function_name'],
+                        'arguments': tc_data['arguments']
+                    }
+                })
+            
+            # 构建消息对象（转换为字典格式）
+            assistant_message = {"role": "assistant"}
+            
+            # 添加思考内容（如果有）
+            if full_reasoning:
+                assistant_message["reasoning_content"] = full_reasoning
+            
+            # 添加工具调用（如果有）
+            if tool_calls:
+                # 转换为 OpenAI API 格式
+                formatted_tool_calls = []
+                for tc in tool_calls:
+                    formatted_tool_calls.append({
+                        "id": tc['id'],
+                        "type": "function",
+                        "function": {
+                            "name": tc['function']['name'],
+                            "arguments": tc['function']['arguments']
+                        }
+                    })
+                assistant_message["tool_calls"] = formatted_tool_calls
+            
+            # 添加内容（如果有）
+            if full_content:
+                assistant_message["content"] = full_content
+            
+            messages.append(assistant_message)
+            
         except Exception as e:
             print(f"❌ API错误: {e}")
+            import traceback
+            traceback.print_exc()
             return await ws.send_json({'type': 'error', 'data': {'message': f'API错误: {e}'}})
         
-        msg = response.choices[0].message
-        messages.append(msg)
-        
-        # 流式发送思考过程
-        if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
-            print(f"🧠 [思考]: {msg.reasoning_content[:100]}...")
-            await ws.send_json({'type': 'thinking', 'data': {'content': msg.reasoning_content}})
-            await asyncio.sleep(0)
-        
-        if msg.tool_calls:
-            for tc in msg.tool_calls:
-                args = json.loads(tc.function.arguments)
-                print(f"🔧 [工具调用] {tc.function.name}: {args}")
-                await ws.send_json({'type': 'tool_call', 'data': {'tool_call_id': tc.id, 'tool_name': tc.function.name, 'arguments': args}})
+        if tool_calls:
+            for tc in tool_calls:
+                args = json.loads(tc['function']['arguments'])
+                print(f"🔧 [工具调用] {tc['function']['name']}: {args}")
+                await ws.send_json({'type': 'tool_call', 'data': {'tool_call_id': tc['id'], 'tool_name': tc['function']['name'], 'arguments': args}})
                 await asyncio.sleep(0)
                 
-                func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}.get(tc.function.name)
+                func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}.get(tc['function']['name'])
                 if func:
                     result = await run_tool(func, **args)
                     summary = ('❌ 未找到匹配' if '未找到匹配项' in result or '未匹配任何文件' in result else 
                                '⚠️ 结果已重复' if '所有结果已重复' in result else 
-                               f'✅ 找到 {m.group(1)} 条新记录' if (m := re.search(r'(\d+)\s*条新记录', result)) else '✅ 搜索完成') if tc.function.name == 'execute_grep' else \
-                              f'✅ 读取 {args["end_line"] - args["start_line"] + 1} 行' if tc.function.name == 'read_file_range' else \
+                               f'✅ 找到 {m.group(1)} 条新记录' if (m := re.search(r'(\d+)\s*条新记录', result)) else '✅ 搜索完成') if tc['function']['name'] == 'execute_grep' else \
+                              f'✅ 读取 {args["end_line"] - args["start_line"] + 1} 行' if tc['function']['name'] == 'read_file_range' else \
                               ('❌ 文件未找到' if 'error' in result else '✅ 目录获取成功')
                     
                     print(f"📤 [发送结果] {summary}")
-                    await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc.id, 'summary': summary}})
-                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+                    await ws.send_json({'type': 'tool_result', 'data': {'tool_call_id': tc['id'], 'summary': summary}})
+                    messages.append({"role": "tool", "tool_call_id": tc['id'], "content": result})
         else:
             # 最终答案流式输出
             print(f"✅ [最终答案] 流式输出中...")
@@ -625,16 +858,19 @@ async def query_agentic_mode(ws: WebSocket, question: str):
 
 
 async def stream_final_answer(ws: WebSocket, messages: list):
-    """流��输出最终答案"""
+    """流式输出最终答案（包括思考过程）"""
     loop = asyncio.get_event_loop()
     full_content = ""
+    full_reasoning = ""
+    thinking_id = 'thinking-final'
     
     def stream_gen():
         stream = get_client().chat.completions.create(
             model=MODEL_DICT[rg_search_v6a.num]["model_name"],
             messages=messages,
             temperature=1,
-            stream=True
+            stream=True,
+            stream_options={"include_usage": True}
         )
         for chunk in stream:
             yield chunk
@@ -651,11 +887,40 @@ async def stream_final_answer(ws: WebSocket, messages: list):
         chunk = await loop.run_in_executor(None, get_next)
         if chunk is None:
             break
-        if chunk.choices and chunk.choices[0].delta.content:
-            content = chunk.choices[0].delta.content
+        
+        # 检查 choices 是否存在
+        if not chunk.choices or len(chunk.choices) == 0:
+            continue
+        
+        choice = chunk.choices[0]
+        
+        # 流式发送思考内容
+        if hasattr(choice.delta, 'reasoning_content') and choice.delta.reasoning_content:
+            reasoning_chunk = choice.delta.reasoning_content
+            full_reasoning += reasoning_chunk
+            await ws.send_json({
+                'type': 'thinking_chunk',
+                'data': {
+                    'thinking_id': thinking_id,
+                    'content': reasoning_chunk
+                }
+            })
+            await asyncio.sleep(0)
+        
+        # 流式发送答案内容
+        if hasattr(choice.delta, 'content') and choice.delta.content:
+            content = choice.delta.content
             full_content += content
             await ws.send_json({'type': 'stream_chunk', 'data': {'content': content}})
             await asyncio.sleep(0)
+    
+    # 完成思考步骤
+    if full_reasoning:
+        await ws.send_json({
+            'type': 'thinking_complete',
+            'data': {'thinking_id': thinking_id}
+        })
+        await asyncio.sleep(0)
     
     print(f"✅ [最终答案]: {full_content[:100]}...")
     await ws.send_json({'type': 'final_answer', 'data': {'content': full_content}})

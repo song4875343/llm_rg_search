@@ -587,8 +587,8 @@
             color: var(--ink-light);
             line-height: 1.35;
             white-space: pre-wrap;
-            max-height: 200px;
-            overflow-y: auto;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .step-summary {
@@ -1434,6 +1434,12 @@ print(calc_ratio(120, 80))
                 case 'thinking':
                     addThinkingStep(msg.data);
                     break;
+                case 'thinking_chunk':
+                    appendThinkingChunk(msg.data);
+                    break;
+                case 'thinking_complete':
+                    completeThinkingStep(msg.data);
+                    break;
                 case 'answer':
                     showAnswer(msg.data);
                     break;
@@ -1541,6 +1547,72 @@ print(calc_ratio(120, 80))
             if (summaryEl) {
                 summaryEl.textContent = data.summary || '完成';
             }
+            scrollProcessToLatest();
+        }
+
+        // Append thinking chunk (流式思考)
+        function appendThinkingChunk(data) {
+            const thinkingId = data.thinking_id;
+            let thinkingEl = document.getElementById(thinkingId);
+            
+            if (!thinkingEl) {
+                // 第一次：创建思考步骤
+                const emptyState = stepsList.querySelector('.empty-state');
+                if (emptyState) {
+                    stepsList.innerHTML = '';
+                    ensureStepsFiller();
+                }
+
+                const html = `
+                    <div class="step thinking" id="${thinkingId}">
+                        <div class="step-header">
+                            <span class="step-id">🧠 思考</span>
+                            <span class="step-tool">REASONING</span>
+                        </div>
+                        <div class="step-content"></div>
+                    </div>
+                `;
+                document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
+                thinkingEl = document.getElementById(thinkingId);
+            }
+            
+            // 追加内容（不再限制长度）
+            const contentEl = thinkingEl.querySelector('.step-content');
+            if (contentEl) {
+                contentEl.textContent += data.content;
+            }
+            
+            scrollProcessToLatest();
+        }
+
+        // Complete thinking step (思考完成)
+        function completeThinkingStep(data) {
+            const thinkingEl = document.getElementById(data.thinking_id);
+            if (!thinkingEl) return;
+            
+            // 可以添加完成标记或样式
+            console.log('✅ 思考步骤完成:', data.thinking_id);
+        }
+
+        // Add thinking step (兼容旧的一次性思考)
+        function addThinkingStep(data) {
+            const emptyState = stepsList.querySelector('.empty-state');
+            if (emptyState) {
+                stepsList.innerHTML = '';
+                ensureStepsFiller();
+            }
+
+            const html = `
+                <div class="step thinking">
+                    <div class="step-header">
+                        <span class="step-id">🧠 思考</span>
+                        <span class="step-tool">REASONING</span>
+                    </div>
+                    <div class="step-content">${esc(data.content.substring(0, 200))}${data.content.length > 200 ? '...' : ''}</div>
+                </div>
+            `;
+            document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
+            console.log('✅ 添加思考步骤');
             scrollProcessToLatest();
         }
 
