@@ -1389,10 +1389,9 @@ print(calc_ratio(120, 80))
             setResultPanelState(false);
         }
 
-        let streamMarkdown = "";
+let streamMarkdown = "";
         let firstChunk = true;
         function appendStreamChunk(content) {
-            // 第一个chunk时先清空加载状态并滚动到整个页面顶部
             if (firstChunk) {
                 resultContent.innerHTML = '<div class="result-text"></div>';
                 setResultPanelState(false);
@@ -1405,10 +1404,16 @@ print(calc_ratio(120, 80))
             streamMarkdown += content;
             resultContent.querySelector('.result-text').innerHTML = renderMarkdown(streamMarkdown);
             
-            // 滚动到新内容下方约3行
-            requestAnimationFrame(() => window.scrollBy(0, 60));
-        }
-
+            // 只在用户已经接近底部时才自动滚动一行
+            requestAnimationFrame(() => {
+                const scrollBottom = window.innerHeight + window.scrollY;
+                const pageHeight = document.documentElement.scrollHeight;
+                if (pageHeight - scrollBottom < 200) {
+                    window.scrollBy(0, 60);
+                }
+            });
+}
+             
         // Show final answer
         function showFinalAnswer(data) {
             // 移除所有呼吸动画

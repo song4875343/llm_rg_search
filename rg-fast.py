@@ -284,7 +284,7 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
 # ================= 主程序 =================
 if __name__ == "__main__":
     run_search(
-        query="基础的宽高比",        
+        query="门式刚架什么时候应设置缆风绳",        
         search_dir="./specs",
         top_k=10,
         context_lines=0
