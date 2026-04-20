@@ -32,8 +32,93 @@ class ModelRequest(BaseModel):
     model_name: str
 
 # ==================== Fast模式搜索函数 ====================
-def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list = None, 
-                          search_dir: str = None, top_k: int = 15, context_lines: int = 0) -> str:
+def get_available_files_fast(search_dir: str) -> list:
+    """递归获取目录下所有 .txt 和 .md 文件名（不含路径）"""
+    files = []
+    for root, _, filenames in os.walk(search_dir):
+        for filename in filenames:
+            if filename.endswith(('.txt', '.md')):
+                files.append(filename)
+    return sorted(files)
+
+def cut_by_punctuation_fast(paragraph: str) -> list[str]:
+    """按中英文标点进行句子切分"""
+    sents = re.findall(r'[^。！？.!?]+[。！？.!?]?', paragraph.strip())
+    return [s.strip() for s in sents if s.strip()]
+
+def chunk_file_fast(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
+    """按句子边界切分文件，返回语义较完整的 chunk"""
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+    except Exception as e:
+        print(f"⚠️ 读取文件 {filepath} 失败: {e}")
+        return []
+
+    sentences = cut_by_punctuation_fast(content)
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    start_pos = 0
+
+    for sent in sentences:
+        sent_len = len(sent)
+        if current_length + sent_len > chunk_size and current_chunk:
+            chunk_text = ''.join(current_chunk)
+            chunks.append({
+                'content': chunk_text,
+                'file': filepath,
+                'start_pos': start_pos,
+                'type': 'chunk'
+            })
+
+            overlap_length = 0
+            overlap_sents = []
+            for s in reversed(current_chunk):
+                if overlap_length + len(s) <= overlap:
+                    overlap_sents.insert(0, s)
+                    overlap_length += len(s)
+                else:
+                    break
+
+            current_chunk = overlap_sents
+            current_length = overlap_length
+            start_pos += len(chunk_text) - overlap_length
+
+        current_chunk.append(sent)
+        current_length += sent_len
+
+    if current_chunk:
+        chunk_text = ''.join(current_chunk)
+        chunks.append({
+            'content': chunk_text,
+            'file': filepath,
+            'start_pos': start_pos,
+            'type': 'chunk'
+        })
+
+    return chunks
+
+def attach_bm25_scores_fast(candidates: list, query: str) -> list:
+    """将 BM25 分数回填到原始候选项"""
+    if not candidates:
+        return candidates
+
+    from bm25_module import BM25
+
+    corpus = [item['content'] for item in candidates]
+    bm25 = BM25(corpus)
+    docs, scores = bm25.get_top_n(query, len(corpus))
+    score_by_index = {int(doc_idx): score for (doc_idx, _), score in zip(docs, scores)}
+
+    for idx, item in enumerate(candidates):
+        item['score'] = score_by_index.get(idx, 0.0)
+
+    return candidates
+
+def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list = None,
+                          target_files: list = None, search_dir: str = None,
+                          top_k: int = 15, context_lines: int = 0) -> str:
     """
     Fast模式：RG搜索 -> BM25排序 -> 添加上下文
     改编自 rg-fast.py
@@ -42,11 +127,13 @@ def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list
         search_dir = str(rg_search_v6a.TARGET)
     
     exact_keywords = exact_keywords or []
+    target_files = target_files or []
     all_keywords = broad_keywords + exact_keywords
     
     print(f"\n🔍 [Fast模式] 原始问题: {query}")
     print(f"🔍 搜索目录: {search_dir}")
     print(f"🔍 关键词: 宽泛={broad_keywords}, 精确={exact_keywords}")
+    print(f"🔍 目标文件: {target_files}")
     
     # Step 1: RG 搜索收集匹配行
     matching_lines = []
@@ -60,72 +147,102 @@ def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list
                 for line in result.stdout.strip().split('\n'):
                     if not line:
                         continue
-                    # 使用正则表达式解析，处理Windows路径中的盘符
-                    # 格式: 文件路径:行号:内容
-                    # Windows绝对路径: C:\path\file.txt:123:content
-                    # 相对路径: path\file.txt:123:content
                     match = re.match(r'^(.+?):(\d+):(.*)$', line)
                     if match:
                         matching_lines.append({
                             'file': match.group(1),
                             'line_num': int(match.group(2)),
-                            'content': match.group(3)
+                            'content': match.group(3),
+                            'type': 'rg'
                         })
         except Exception as e:
             print(f"⚠️ 搜索 '{kw}' 出错: {e}")
-    
-    if not matching_lines:
+
+    print(f"✅ RG 找到 {len(matching_lines)} 个匹配行")
+
+    # Step 2: 读取目标文件并切块
+    file_chunks = []
+    for filename in target_files:
+        found = False
+        for root, _, filenames in os.walk(search_dir):
+            if filename in filenames:
+                filepath = os.path.join(root, filename)
+                chunks = chunk_file_fast(filepath, chunk_size=512, overlap=50)
+                file_chunks.extend(chunks)
+                print(f"✅ 文件 {filename} 切分为 {len(chunks)} 个 chunks")
+                found = True
+                break
+        if not found:
+            print(f"⚠️ 目标文件未找到: {filename}")
+
+    print(f"✅ 总共生成 {len(file_chunks)} 个文件 chunks")
+
+    all_candidates = matching_lines + file_chunks
+    if not all_candidates:
         return "未找到匹配内容"
-    
-    print(f"✅ 找到 {len(matching_lines)} 个匹配行")
-    
-    # Step 2: BM25 排序
+
+    print(f"✅ 总候选内容: {len(all_candidates)} 条")
+
+    # Step 3: BM25 排序
     try:
-        from bm25_module import BM25
-        corpus = [line['content'] for line in matching_lines]
-        bm25 = BM25(corpus)
-        _, scores = bm25.get_top_n(query, len(corpus))
-        
-        # 按分数排序，并对包含精确关键词的行加分
-        for i, line in enumerate(matching_lines):
-            line['score'] = scores[i]
-            line_lower = line['content'].lower()
-            
+        attach_bm25_scores_fast(all_candidates, query)
+
+        for item in all_candidates:
+            content_lower = item['content'].lower()
+
             # 统计宽泛关键词命中数量
-            broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in line_lower)
+            broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in content_lower)
             if broad_hit_count == 2:
-                line['score'] += 0.5
+                item['score'] += 0.5
             elif broad_hit_count >= 3:
-                line['score'] += 1.0
-            
-            # 如果行中包含精确关键词，额外加分
+                item['score'] += 1.0
+
             if exact_keywords:
                 for exact_kw in exact_keywords:
-                    if exact_kw.lower() in line_lower:
-                        line['score'] += 1.0
+                    if exact_kw.lower() in content_lower:
+                        item['score'] += 1.0
                         break
-        
-        matching_lines.sort(key=lambda x: x['score'], reverse=True)
+
+        all_candidates.sort(key=lambda x: x['score'], reverse=True)
     except ImportError:
         print("⚠️ BM25模块未找到，跳过排序")
-    
-    # 去重
-    seen = set()
+
+    # RG优先去重：RG按文件+行号去重，chunk若与RG内容重叠则跳过
+    rg_contents = set()
+    for item in all_candidates:
+        if item['type'] == 'rg':
+            rg_contents.add(item['content'].strip().lower())
+
+    seen_rg = set()
     deduplicated = []
-    for line in matching_lines:
-        key = (line['file'], line['line_num'])
-        if key not in seen:
-            deduplicated.append(line)
-            seen.add(key)
-    
-    top_lines = deduplicated[:top_k]
-    print(f"📊 去重后: {len(deduplicated)} 行, Top-{len(top_lines)} 匹配行")
-    
-    # Step 3: 添加上下文
+
+    for item in all_candidates:
+        if item['type'] == 'rg':
+            key = (item['file'], item['line_num'])
+            if key not in seen_rg:
+                deduplicated.append(item)
+                seen_rg.add(key)
+        else:
+            chunk_lower = item['content'].strip().lower()
+            is_duplicate = False
+            for rg_content in rg_contents:
+                if rg_content in chunk_lower or chunk_lower in rg_content:
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                deduplicated.append(item)
+
+    top_items = deduplicated[:top_k]
+    print(f"📊 去重后: {len(deduplicated)} 条 (RG优先), Top-{len(top_items)} 结果")
+
+    # Step 4: 添加上下文（仅 RG）或直接返回 chunk
     results = []
-    for i, line in enumerate(top_lines, 1):
-        context = _extract_context_fast(line['file'], line['line_num'], context_lines)
-        results.append(f"--- {os.path.basename(line['file'])}:行{line['line_num']}  ---\n{context}\n")
+    for item in top_items:
+        if item['type'] == 'rg':
+            context = _extract_context_fast(item['file'], item['line_num'], context_lines)
+            results.append(f"--- {os.path.basename(item['file'])}:行{item['line_num']} [RG] ---\n{context}\n")
+        else:
+            results.append(f"--- {os.path.basename(item['file'])}:位置{item['start_pos']} [CHUNK] ---\n{item['content']}\n")
     
     final_result = "\n".join(results)
     print(f"✅ 返回内容总长度: {len(final_result)} 字符")
@@ -164,9 +281,14 @@ TOOLS_FAST = [{
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "1元素的精确关键词列表，用于评定返回内容的命中可能性"
+                },
+                "target_files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "最可能包含答案的文件名列表（从可用文件列表中选择）"
                 }
             },
-            "required": ["query", "broad_keywords"]
+            "required": ["query", "broad_keywords", "target_files"]
         }
     }
 }]
@@ -476,20 +598,25 @@ async def query(ws: WebSocket):
 async def query_fast_mode(ws: WebSocket, question: str):
     """Fast模式查询"""
     current_model = MODEL_DICT[rg_search_v6a.num]["model_name"]
+    available_files = get_available_files_fast(str(rg_search_v6a.TARGET))
     print(f"\n[Fast模式] 开始查询")
     print(f"🤖 使用模型: {current_model} (序号{rg_search_v6a.num})")
     print(f"📁 搜索目录: {rg_search_v6a.TARGET}")
     
-    system_prompt = """你是文档检索专家。
+    system_prompt = f"""你是文档检索专家。
+
+可用文件列表：
+{', '.join(available_files)}
 
 工作流程：
-1. 分析用户问题，提取关键词
+1. 分析用户问题，提取关键词和目标文件
 2. 调用 search_documents 工具搜索
 3. 基于搜索结果生成答案
 
 注意：
 - broad_keywords: 1-2个核心关键词
 - exact_keywords: 1个最特殊、最关键的元关键词
+- target_files: 从可用文件列表中选择1-3个最可能包含答案的文件
 - 必须先调用工具再回答"""
 
     messages = [
@@ -622,6 +749,7 @@ async def query_fast_mode(ws: WebSocket, question: str):
                 query=args.get("query", question),
                 broad_keywords=args.get("broad_keywords", []),
                 exact_keywords=args.get("exact_keywords", []),
+                target_files=args.get("target_files", []),
                 search_dir=str(rg_search_v6a.TARGET),
                 top_k=10,
                 context_lines=rg_search_v6a.CONTENT_LINES

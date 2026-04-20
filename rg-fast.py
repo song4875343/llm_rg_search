@@ -10,6 +10,12 @@
 难以克服的缺点：
     1.由于是fast版本不希望经过多轮关键词搜索，在没有预先了解知识库的情况如果用户有错别字，尤其是关键信息上
     就会导致搜索失败，但是在多轮agent-search上就能避免，这是形式上的。
+v2 上面是v1的做法
+    v2解决了错别字的问题，之前的问题实际上存在两个问题，
+    一rg对错误的关键词确实没有办法，经常是0命中
+    二量太少是bm25会有漂移情况，结果很不稳定也不真实
+    三v2 让llm提供了最可能出现在哪写文件中，然后对这些文件切片，回答完美避免了简写错写关键词的问题，如果碰巧有些关键词再写对，准确率比原来高，真的没写对
+    一般也能解决问题，也就是不用关键词，用判断文件再bm25大部分问题也能解决了。
 """
 
 import os
@@ -31,7 +37,7 @@ MODEL_CONFIG = {
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'kimi-k2.5:cloud'},
 }
 
-MODEL_NUM = 4
+MODEL_NUM = 3
 
 # ================= 初始化客户端 =================
 config = MODEL_CONFIG[MODEL_NUM]
@@ -62,33 +68,146 @@ TOOLS = [{
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "1元素的精确关键词列表，用于评定返回内容的命中可能性"
+                },
+                "target_files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "最可能包含答案的文件名列表（从可用文件列表中选择）"
                 }
             },
-            "required": ["query", "broad_keywords"]
+            "required": ["query", "broad_keywords", "target_files"]
         }
     }
 }]
+# ================= 辅助函数 =================
+def get_available_files(search_dir: str) -> list:
+    """获取目录下所有 .txt 和 .md 文件名（不含路径）"""
+    files = []
+    for root, _, filenames in os.walk(search_dir):
+        for filename in filenames:
+            if filename.endswith(('.txt', '.md')):
+                files.append(filename)
+    return sorted(files)
+
+def cut_by_punctuation(paragraph: str) -> list[str]:
+    """中文句子切分"""
+    import re
+    sents = re.findall(r'[^。！？.!?]+[。！？.!?]?', paragraph.strip())
+    return [s.strip() for s in sents if s.strip()]
+
+def chunk_file(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
+    """
+    将文件切分成 chunks（按句子边界切分，保证语义完整）
+    
+    Args:
+        filepath: 文件路径
+        chunk_size: 每个 chunk 的目标字符数
+        overlap: 重叠字符数
+    
+    Returns:
+        list of dict: [{'content': str, 'file': str, 'start_pos': int}, ...]
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+    except Exception as e:
+        print(f"⚠️ 读取文件 {filepath} 失败: {e}")
+        return []
+    
+    # 按句子切分
+    sentences = cut_by_punctuation(content)
+    
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    start_pos = 0
+    
+    for sent in sentences:
+        sent_len = len(sent)
+        
+        # 如果当前 chunk + 新句子超过 chunk_size，保存当前 chunk
+        if current_length + sent_len > chunk_size and current_chunk:
+            chunk_text = ''.join(current_chunk)
+            chunks.append({
+                'content': chunk_text,
+                'file': filepath,
+                'start_pos': start_pos,
+                'type': 'chunk'
+            })
+            
+            # 计算重叠部分：保留最后几个句子
+            overlap_length = 0
+            overlap_sents = []
+            for s in reversed(current_chunk):
+                if overlap_length + len(s) <= overlap:
+                    overlap_sents.insert(0, s)
+                    overlap_length += len(s)
+                else:
+                    break
+            
+            # 重置 chunk，保留重叠部分
+            current_chunk = overlap_sents
+            current_length = overlap_length
+            start_pos += len(chunk_text) - overlap_length
+        
+        current_chunk.append(sent)
+        current_length += sent_len
+    
+    # 保存最后一个 chunk
+    if current_chunk:
+        chunk_text = ''.join(current_chunk)
+        chunks.append({
+            'content': chunk_text,
+            'file': filepath,
+            'start_pos': start_pos,
+            'type': 'chunk'
+        })
+    
+    return chunks
+
+def attach_bm25_scores(candidates: list, query: str) -> list:
+    """
+    对候选内容进行 BM25 打分，并把分数绑定回原候选项。
+
+    bm25_module.get_top_n() 返回的 scores 顺序与返回 docs 的排序一致，
+    不是原始 corpus 的顺序，因此需要通过返回的文档索引回填分数。
+    """
+    if not candidates:
+        return candidates
+
+    corpus = [item['content'] for item in candidates]
+    bm25 = BM25(corpus)
+    docs, scores = bm25.get_top_n(query, len(corpus))
+
+    score_by_index = {int(doc_idx): score for (doc_idx, _), score in zip(docs, scores)}
+    for idx, item in enumerate(candidates):
+        item['score'] = score_by_index.get(idx, 0.0)
+
+    return candidates
+
 # ================= 1. 搜索工具实现 =================
 def search_documents(query: str, broad_keywords: list, exact_keywords: list = None, 
-                     search_dir: str = "./specs", top_k: int = 15, context_lines: int = 0) -> str:
+                     target_files: list = None, search_dir: str = "./specs", 
+                     top_k: int = 15, context_lines: int = 0) -> str:
     """
-    三步走：RG搜索 -> BM25排序 -> 添加上下文
+    四步走：RG搜索 -> 文件切块 -> BM25排序 -> 添加上下文
     
     Args:
         query: 用户的原始问题，用于 BM25 相关性计算
         broad_keywords: 宽泛关键词列表
         exact_keywords: 精确关键词列表
+        target_files: 目标文件名列表
         search_dir: 搜索目录
         top_k: 返回前 K 个结果
         context_lines: 每个匹配行前后显示的行数
     """
     exact_keywords = exact_keywords or []
+    target_files = target_files or []
     all_keywords = broad_keywords + exact_keywords
     
     print(f"\n🔍 原始问题: {query}")
     print(f"🔍 关键词: 宽泛={broad_keywords}, 精确={exact_keywords}")
-    exact_keywords = exact_keywords or []
-    all_keywords = broad_keywords + exact_keywords
+    print(f"🔍 目标文件: {target_files}")
      
     # Step 1: RG 搜索收集匹配行
     matching_lines = []
@@ -106,62 +225,116 @@ def search_documents(query: str, broad_keywords: list, exact_keywords: list = No
                             matching_lines.append({
                                 'file': parts[0],
                                 'line_num': int(parts[1]),
-                                'content': parts[2]
+                                'content': parts[2],
+                                'type': 'rg'
                             })
         except Exception as e:
             print(f"⚠️ 搜索 '{kw}' 出错: {e}")
     
-    if not matching_lines:
+    print(f"✅ RG 找到 {len(matching_lines)} 个匹配行")
+    
+    # Step 2: 读取目标文件并切块
+    file_chunks = []
+    for filename in target_files:
+        # 在 search_dir 中查找文件
+        for root, _, filenames in os.walk(search_dir):
+            if filename in filenames:
+                filepath = os.path.join(root, filename)
+                chunks = chunk_file(filepath, chunk_size=512, overlap=50)
+                file_chunks.extend(chunks)
+                print(f"✅ 文件 {filename} 切分为 {len(chunks)} 个 chunks")
+                break
+    
+    print(f"✅ 总共生成 {len(file_chunks)} 个文件 chunks")
+    
+    # 合并 RG 结果和文件 chunks
+    all_candidates = matching_lines + file_chunks
+    
+    if not all_candidates:
         return "未找到匹配内容"
     
-    print(f"✅ 找到 {len(matching_lines)} 个匹配行")
+    print(f"✅ 总候选内容: {len(all_candidates)} 条")
     
-    # Step 2: BM25 排序
-    corpus = [line['content'] for line in matching_lines]
-    bm25 = BM25(corpus)
+    # Step 3: BM25 排序
+    attach_bm25_scores(all_candidates, query)
     
-    # get_top_n 需要字符串查询，返回 (文档列表, 分数列表)
-    _, scores = bm25.get_top_n(query, len(corpus))
-    
-    # 按分数排序，并对包含精确关键词的行加分
-    for i, line in enumerate(matching_lines):
-        line['score'] = scores[i]
-        line_lower = line['content'].lower()
+    # 按分数排序，并对包含精确关键词的内容加分
+    for item in all_candidates:
+        content_lower = item['content'].lower()
         
         # 统计宽泛关键词命中数量
-        broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in line_lower)
+        broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in content_lower)
         if broad_hit_count == 2:
-            line['score'] += 0.5
+            item['score'] += 0.5
         elif broad_hit_count >= 3:
-            line['score'] += 1.0
+            item['score'] += 1.0
         
-        # 如果行中包含精确关键词，额外加分
+        # 如果内容中包含精确关键词，额外加分
         if exact_keywords:
             for exact_kw in exact_keywords:
-                if exact_kw.lower() in line_lower:
-                    line['score'] += 1.0
+                if exact_kw.lower() in content_lower:
+                    item['score'] += 1.0
                     break  # 只加一次分
     
-    matching_lines.sort(key=lambda x: x['score'], reverse=True)
+    all_candidates.sort(key=lambda x: x['score'], reverse=True)
     
-    # 去重：确保原始行不重复（按文件+行号）
-    seen = set()
+    # 去重策略：RG 行优先，如果 chunk 与 RG 行重叠则跳过 chunk
+    # 1. 先收集所有 RG 行的内容（用于检测重叠）
+    rg_contents = set()
+    for item in all_candidates:
+        if item['type'] == 'rg':
+            rg_contents.add(item['content'].strip().lower())
+    
+    # 2. 去重：RG 结果按文件+行号，chunk 检查是否与 RG 内容重叠
+    seen_rg = set()  # 已见过的 RG 行（文件+行号）
     deduplicated = []
-    for line in matching_lines:
-        key = (line['file'], line['line_num'])
-        if key not in seen:
-            deduplicated.append(line)
-            seen.add(key)
     
-    top_lines = deduplicated[:top_k]
-    print(f"📊 去重后: {len(deduplicated)} 行, Top-{len(top_lines)} 匹配行")
-    # [print(L,'\n') for L in top_lines]
+    for item in all_candidates:
+        if item['type'] == 'rg':
+            # RG 行去重：按文件+行号
+            key = (item['file'], item['line_num'])
+            if key not in seen_rg:
+                deduplicated.append(item)
+                seen_rg.add(key)
+        else:  # chunk
+            # Chunk 去重：检查是否与任何 RG 行内容重叠
+            chunk_lower = item['content'].strip().lower()
+            is_duplicate = False
+            
+            # 如果 chunk 包含任何 RG 行的内容，视为重复
+            for rg_content in rg_contents:
+                if rg_content in chunk_lower or chunk_lower in rg_content:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                deduplicated.append(item)
+    
+    top_items = deduplicated[:top_k]
+    print(f"📊 去重后: {len(deduplicated)} 条 (RG优先), Top-{len(top_items)} 结果")
+    
+    # 打印 Top-K 详细信息
+    # print(f"\n{'='*80}")
+    # print(f"📋 Top-{len(top_items)} 结果详情:")
+    # print(f"{'='*80}")
+    # for i, item in enumerate(top_items, 1):
+    #     print(f"\n[{i}] 类型: {item['type'].upper()} | 分数: {item['score']:.4f}")
+    #     print(f"    文件: {os.path.basename(item['file'])}")
+    #     if item['type'] == 'rg':
+    #         print(f"    行号: {item['line_num']}")
+    #     else:
+    #         print(f"    位置: {item['start_pos']}")
+    #     print(f"    内容预览: {item['content']}...")
+    # print(f"{'='*80}\n")
 
-    # Step 3: 添加上下文
+    # Step 4: 添加上下文（仅对 RG 结果）或直接返回 chunk
     results = []
-    for i, line in enumerate(top_lines, 1):
-        context = _extract_context(line['file'], line['line_num'], context_lines)
-        results.append(f"--- {os.path.basename(line['file'])}:行{line['line_num']}  ---\n{context}\n")
+    for i, item in enumerate(top_items, 1):
+        if item['type'] == 'rg':
+            context = _extract_context(item['file'], item['line_num'], context_lines)
+            results.append(f"--- {os.path.basename(item['file'])}:行{item['line_num']} [RG] ---\n{context}\n")
+        else:  # chunk
+            results.append(f"--- {os.path.basename(item['file'])}:位置{item['start_pos']} [CHUNK] ---\n{item['content']}\n")
     
     final_result = "\n".join(results)
     print(f"\n✅ 返回内容总长度: {len(final_result)} 字符")
@@ -192,16 +365,24 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
     
     print(f"\n{'='*60}\n🚀 问题: {query}\n{'='*60}")
     
-    system_prompt = """你是文档检索专家。
+    # 获取可用文件列表
+    available_files = get_available_files(search_dir)
+    # print(f"\n📁 可用文件 ({len(available_files)} 个): {available_files[:5]}..." if len(available_files) > 5 else f"\n📁 可用文件: {available_files}")
     
+    system_prompt = f"""你是文档检索专家。
+
+可用文件列表：
+{', '.join(available_files)}
+
 工作流程：
-1. 分析用户问题，提取关键词
+1. 分析用户问题，提取关键词和目标文件
 2. 调用 search_documents 工具搜索
 3. 基于搜索结果生成答案
 
 注意：
 - broad_keywords: 1-2个核心关键词
-- exact_keywords: 1,最特殊,最关键的元关键词可以为broad_keywords元关键词中较特殊的一个
+- exact_keywords: 1个最特殊、最关键的元关键词（可以是 broad_keywords 中较特殊的一个）
+- target_files: 从可用文件列表中选择1-3个最可能包含答案的文件
 - 必须先调用工具再回答"""
 
     messages = [
@@ -236,6 +417,7 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
                 args.get("query", query),  # 使用 LLM 提供的 query 或原始问题
                 args.get("broad_keywords", []),
                 args.get("exact_keywords", []),
+                args.get("target_files", []),
                 search_dir=search_dir,
                 top_k=top_k,
                 context_lines=context_lines
@@ -284,7 +466,7 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
 # ================= 主程序 =================
 if __name__ == "__main__":
     run_search(
-        query="门式刚架什么时候应设置缆风绳",        
+        query="门刚应何时设拦风绳",        
         search_dir="./specs",
         top_k=10,
         context_lines=0
