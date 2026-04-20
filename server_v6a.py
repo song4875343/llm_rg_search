@@ -112,9 +112,18 @@ def attach_bm25_scores_fast(candidates: list, query: str) -> list:
     score_by_index = {int(doc_idx): score for (doc_idx, _), score in zip(docs, scores)}
 
     for idx, item in enumerate(candidates):
-        item['score'] = score_by_index.get(idx, 0.0)
+        bm25_score = score_by_index.get(idx, 0.0)
+        item['bm25_score'] = bm25_score
+        item['score'] = bm25_score
 
     return candidates
+
+
+def get_candidate_key_fast(item: dict):
+    """为候选项生成稳定唯一键，便于融合多路排序结果。"""
+    if item['type'] == 'rg':
+        return ('rg', item['file'], item['line_num'])
+    return ('chunk', item['file'], item['start_pos'])
 
 def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list = None,
                           target_files: list = None, search_dir: str = None,
@@ -189,36 +198,47 @@ def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list
 
         for item in all_candidates:
             content_lower = item['content'].lower()
+            keyword_bonus = 0.0
 
             # 统计宽泛关键词命中数量
             broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in content_lower)
             if broad_hit_count == 2:
-                item['score'] += 0.5
+                keyword_bonus += 0.5
             elif broad_hit_count >= 3:
-                item['score'] += 1.0
+                keyword_bonus += 1.0
 
             if exact_keywords:
                 for exact_kw in exact_keywords:
                     if exact_kw.lower() in content_lower:
-                        item['score'] += 1.0
+                        keyword_bonus += 1.0
                         break
 
-        all_candidates.sort(key=lambda x: x['score'], reverse=True)
+            item['keyword_bonus'] = keyword_bonus
+            item['boosted_score'] = item['bm25_score'] + keyword_bonus
+
+        bm25_sorted = sorted(all_candidates, key=lambda x: x['bm25_score'], reverse=True)
+        boosted_sorted = sorted(all_candidates, key=lambda x: x['boosted_score'], reverse=True)
     except ImportError:
         print("⚠️ BM25模块未找到，跳过排序")
+        bm25_sorted = all_candidates[:]
+        boosted_sorted = all_candidates[:]
+        for item in all_candidates:
+            item.setdefault('bm25_score', item.get('score', 0.0))
+            item.setdefault('keyword_bonus', 0.0)
+            item.setdefault('boosted_score', item.get('score', 0.0))
 
     # RG优先去重：RG按文件+行号去重，chunk若与RG内容重叠则跳过
     rg_contents = set()
-    for item in all_candidates:
+    for item in bm25_sorted:
         if item['type'] == 'rg':
             rg_contents.add(item['content'].strip().lower())
 
     seen_rg = set()
     deduplicated = []
 
-    for item in all_candidates:
+    for item in bm25_sorted:
         if item['type'] == 'rg':
-            key = (item['file'], item['line_num'])
+            key = get_candidate_key_fast(item)
             if key not in seen_rg:
                 deduplicated.append(item)
                 seen_rg.add(key)
@@ -232,8 +252,47 @@ def search_documents_fast(query: str, broad_keywords: list, exact_keywords: list
             if not is_duplicate:
                 deduplicated.append(item)
 
-    top_items = deduplicated[:top_k]
-    print(f"📊 去重后: {len(deduplicated)} 条 (RG优先), Top-{len(top_items)} 结果")
+    dedup_map = {get_candidate_key_fast(item): item for item in deduplicated}
+    bm25_dedup = [item for item in bm25_sorted if get_candidate_key_fast(item) in dedup_map]
+    boosted_dedup = [item for item in boosted_sorted if get_candidate_key_fast(item) in dedup_map]
+
+    bm25_pick_count = min(10, top_k)
+    boosted_pick_count = min(5, top_k)
+    merged_items = []
+    selected_keys = set()
+
+    def add_candidates(candidates: list, source_name: str, limit: int = None):
+        added = 0
+        for candidate in candidates:
+            key = get_candidate_key_fast(candidate)
+            if key in selected_keys:
+                if source_name not in candidate.get('selected_by', []):
+                    candidate.setdefault('selected_by', []).append(source_name)
+                continue
+
+            candidate['selected_by'] = [source_name]
+            merged_items.append(candidate)
+            selected_keys.add(key)
+            added += 1
+            if limit is not None and added >= limit:
+                break
+
+    add_candidates(bm25_dedup, 'bm25', bm25_pick_count)
+    add_candidates(boosted_dedup, 'boosted', boosted_pick_count)
+    add_candidates(bm25_dedup, 'bm25_fill')
+
+    top_items = merged_items[:top_k]
+
+    def final_rank_key(item: dict):
+        selected_by = item.get('selected_by', [])
+        both_selected = ('bm25' in selected_by and 'boosted' in selected_by)
+        return (1 if both_selected else 0, item['boosted_score'], item['bm25_score'])
+
+    top_items.sort(key=final_rank_key, reverse=True)
+    print(
+        f"📊 去重后: {len(deduplicated)} 条 (RG优先), "
+        f"BM25取前{bm25_pick_count} + 修正取前{boosted_pick_count} -> Top-{len(top_items)}"
+    )
 
     # Step 4: 添加上下文（仅 RG）或直接返回 chunk
     results = []

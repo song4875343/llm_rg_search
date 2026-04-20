@@ -16,6 +16,8 @@ v2 上面是v1的做法
     二量太少是bm25会有漂移情况，结果很不稳定也不真实
     三v2 让llm提供了最可能出现在哪写文件中，然后对这些文件切片，回答完美避免了简写错写关键词的问题，如果碰巧有些关键词再写对，准确率比原来高，真的没写对
     一般也能解决问题，也就是不用关键词，用判断文件再bm25大部分问题也能解决了。
+    目前是双路返回纯bm25排序返回10个，关键词加分返回5个，后续我会考虑关键词加分到底有意义吗
+    30b的模型总体很不错，但是当问题问的有瑕疵，比如宽高比写成了高宽比之类，它会很教条的认为没有这个东西，但是没写错的化它表现得就很好，其次速度又快，性能又好的就是120b的，不管有没写错agent总是最稳的。
 """
 
 import os
@@ -181,9 +183,18 @@ def attach_bm25_scores(candidates: list, query: str) -> list:
 
     score_by_index = {int(doc_idx): score for (doc_idx, _), score in zip(docs, scores)}
     for idx, item in enumerate(candidates):
-        item['score'] = score_by_index.get(idx, 0.0)
+        bm25_score = score_by_index.get(idx, 0.0)
+        item['bm25_score'] = bm25_score
+        item['score'] = bm25_score
 
     return candidates
+
+
+def get_candidate_key(item: dict):
+    """为候选项生成稳定唯一键，便于融合多路排序结果。"""
+    if item['type'] == 'rg':
+        return ('rg', item['file'], item['line_num'])
+    return ('chunk', item['file'], item['start_pos'])
 
 # ================= 1. 搜索工具实现 =================
 def search_documents(query: str, broad_keywords: list, exact_keywords: list = None, 
@@ -258,30 +269,35 @@ def search_documents(query: str, broad_keywords: list, exact_keywords: list = No
     # Step 3: BM25 排序
     attach_bm25_scores(all_candidates, query)
     
-    # 按分数排序，并对包含精确关键词的内容加分
+    # 计算关键词加分，但保留原始 BM25 分数
     for item in all_candidates:
         content_lower = item['content'].lower()
+        keyword_bonus = 0.0
         
         # 统计宽泛关键词命中数量
         broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in content_lower)
         if broad_hit_count == 2:
-            item['score'] += 0.5
+            keyword_bonus += 0.5
         elif broad_hit_count >= 3:
-            item['score'] += 1.0
+            keyword_bonus += 1.0
         
         # 如果内容中包含精确关键词，额外加分
         if exact_keywords:
             for exact_kw in exact_keywords:
                 if exact_kw.lower() in content_lower:
-                    item['score'] += 1.0
+                    keyword_bonus += 1.0
                     break  # 只加一次分
+
+        item['keyword_bonus'] = keyword_bonus
+        item['boosted_score'] = item['bm25_score'] + keyword_bonus
     
-    all_candidates.sort(key=lambda x: x['score'], reverse=True)
+    bm25_sorted = sorted(all_candidates, key=lambda x: x['bm25_score'], reverse=True)
+    boosted_sorted = sorted(all_candidates, key=lambda x: x['boosted_score'], reverse=True)
     
     # 去重策略：RG 行优先，如果 chunk 与 RG 行重叠则跳过 chunk
     # 1. 先收集所有 RG 行的内容（用于检测重叠）
     rg_contents = set()
-    for item in all_candidates:
+    for item in bm25_sorted:
         if item['type'] == 'rg':
             rg_contents.add(item['content'].strip().lower())
     
@@ -289,10 +305,10 @@ def search_documents(query: str, broad_keywords: list, exact_keywords: list = No
     seen_rg = set()  # 已见过的 RG 行（文件+行号）
     deduplicated = []
     
-    for item in all_candidates:
+    for item in bm25_sorted:
         if item['type'] == 'rg':
             # RG 行去重：按文件+行号
-            key = (item['file'], item['line_num'])
+            key = get_candidate_key(item)
             if key not in seen_rg:
                 deduplicated.append(item)
                 seen_rg.add(key)
@@ -309,9 +325,48 @@ def search_documents(query: str, broad_keywords: list, exact_keywords: list = No
             
             if not is_duplicate:
                 deduplicated.append(item)
-    
-    top_items = deduplicated[:top_k]
-    print(f"📊 去重后: {len(deduplicated)} 条 (RG优先), Top-{len(top_items)} 结果")
+
+    dedup_map = {get_candidate_key(item): item for item in deduplicated}
+    bm25_dedup = [item for item in bm25_sorted if get_candidate_key(item) in dedup_map]
+    boosted_dedup = [item for item in boosted_sorted if get_candidate_key(item) in dedup_map]
+
+    bm25_pick_count = min(10, top_k)
+    boosted_pick_count = min(5, top_k)
+    merged_items = []
+    selected_keys = set()
+
+    def add_candidates(candidates: list, source_name: str, limit: int = None):
+        added = 0
+        for candidate in candidates:
+            key = get_candidate_key(candidate)
+            if key in selected_keys:
+                if source_name not in candidate.get('selected_by', []):
+                    candidate.setdefault('selected_by', []).append(source_name)
+                continue
+
+            candidate['selected_by'] = [source_name]
+            merged_items.append(candidate)
+            selected_keys.add(key)
+            added += 1
+            if limit is not None and added >= limit:
+                break
+
+    add_candidates(bm25_dedup, 'bm25', bm25_pick_count)
+    add_candidates(boosted_dedup, 'boosted', boosted_pick_count)
+    add_candidates(bm25_dedup, 'bm25_fill')
+
+    top_items = merged_items[:top_k]
+
+    def final_rank_key(item: dict):
+        selected_by = item.get('selected_by', [])
+        both_selected = ('bm25' in selected_by and 'boosted' in selected_by)
+        return (1 if both_selected else 0, item['boosted_score'], item['bm25_score'])
+
+    top_items.sort(key=final_rank_key, reverse=True)
+    print(
+        f"📊 去重后: {len(deduplicated)} 条 (RG优先), "
+        f"BM25取前{bm25_pick_count} + 修正取前{boosted_pick_count} -> Top-{len(top_items)}"
+    )
     
     # 打印 Top-K 详细信息
     # print(f"\n{'='*80}")
@@ -466,7 +521,7 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
 # ================= 主程序 =================
 if __name__ == "__main__":
     run_search(
-        query="门刚应何时设拦风绳",        
+        query="独立基础的高宽比",        
         search_dir="./specs",
         top_k=10,
         context_lines=0
