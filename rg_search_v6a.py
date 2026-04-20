@@ -190,7 +190,7 @@ def read_file_range(filepath, start_line, end_line):
 # ==================== 工具 Schema 定义 ====================
 TOOLS_SCHEMA = [
     {"type": "function", "function": {"name": "get_document_toc", "description": "获取指定文档的详细章节目录", "parameters": {"type": "object", "properties": {"filename": {"type": "string"}}, "required": ["filename"]}}},
-    {"type": "function", "function": {"name": "execute_grep", "description": "搜索关键词，返回匹配行及上下文", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}, "include_files": {"type": "string"}}, "required": ["pattern"]}}},
+    {"type": "function", "function": {"name": "execute_grep", "description": "搜索关键词，返回匹配行及上下文", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}, "include_files": {"type": "string", "description": "指定要在哪些文件中搜索，填入文件名。为空则全库搜索。"}}, "required": ["pattern"]}}},
     {"type": "function", "function": {"name": "read_file_range", "description": "读取指定文件的特定行数范围", "parameters": {"type": "object", "properties": {"filepath": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["filepath", "start_line", "end_line"]}}},
 ]
 
