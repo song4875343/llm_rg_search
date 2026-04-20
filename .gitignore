@@ -8,7 +8,7 @@ uploaded_folders/
 
 # 其他常见需要忽略的文件
 __pycache__/
-*.py[cod]
+*.pyc
 *$py.class
 *.so
 .Python
