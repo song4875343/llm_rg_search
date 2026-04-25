@@ -11,7 +11,6 @@ from bm25_module import BM25
 load_dotenv()
 
 # ===== 模型与客户端初始化 =====
-# ================= 配置 =================
 MODEL_CONFIG = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
@@ -49,7 +48,6 @@ def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
     return kw
 
 # ===== Function Call 工具定义 =====
-# ================= 工具定义 =================
 TOOLS = [{
     "type": "function",
     "function": {
@@ -68,7 +66,7 @@ TOOLS = [{
     }
 }]
 
-# ===== 辅助函数 =====
+# 辅助函数：提示词构造、流式输出、切块、BM25 打分、rg 解析、去重融合、结果格式化
 # ================= 辅助函数 =================
 get_available_files = lambda search_dir: sorted([f for root, _, files in os.walk(search_dir) for f in files if f.endswith(('.txt', '.md'))])
 cut_by_punctuation = lambda text: [s.strip() for s in re.findall(r'[^。！？.!?]+[。！？.!?]?', text.strip()) if s.strip()]
@@ -217,7 +215,6 @@ def _format_result(item: dict, context_lines: int) -> str:
         f"--- {os.path.basename(item['file'])}:位置{item['start_pos']} [CHUNK] ---\n{item['content']}\n"
     )
 
-# ===== 本地检索主流程 =====
 # ================= 搜索工具实现 =================
 def search_documents(query: str, broad_keywords: list, exact_keywords: list = None, 
                      target_files: list = None, search_dir: str = "./specs", 
@@ -268,7 +265,6 @@ def search_documents(query: str, broad_keywords: list, exact_keywords: list = No
         yield final_result
     return _core() if stream else ''.join(filter(None, list(_core())))
 
-# ===== Agent 编排层 =====
 # ================= Agent 主循环 =================
 def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context_lines: int = 10, stream: bool = False):
     """两步 Agent：调用工具 -> 生成答案"""
@@ -317,7 +313,6 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
                 yield from _emit(stream, "⚠️ API 返回空响应")
     return _core() if stream else list(_core())
 
-# ===== 脚本入口 =====
 # ================= 主程序 =================
 if __name__ == "__main__":
     # 非流式模式（默认）
