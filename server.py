@@ -53,6 +53,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 UPLOAD_DIR = SCRIPT_DIR / "uploaded_folders"
 UPLOAD_DIR.mkdir(exist_ok=True)
+ok = lambda data=None, **kw: JSONResponse((data or {}) | kw)
+bad = lambda msg, code=400, **kw: JSONResponse({"success": False, "message": msg, **kw}, status_code=code)
 
 # ==================== 请求模型 ====================
 class FolderPathRequest(BaseModel):
@@ -77,102 +79,63 @@ async def index():
 @app.post("/api/set-folder")
 async def set_folder(request: FolderPathRequest):
     """设置工作文件夹"""
-    try:
-        folder_path = SCRIPT_DIR / request.folder_path if request.folder_path != "." else SCRIPT_DIR
-        if not folder_path.exists() or not folder_path.is_dir():
-            return JSONResponse({"success": False, "message": "文件夹不存在或不是目录"}, status_code=400)
-        
-        set_target_folder(str(folder_path))
-        print(f"📁 工作文件夹: {rg_search_v6a.TARGET}, 文件数: {len(FILE_MAP)}")
-        
-        return JSONResponse({
-            "success": True,
-            "message": f"已设置文件夹: {folder_path}",
-            "file_count": len(FILE_MAP),
-            "files": list(FILE_MAP.keys())
-        })
-    except Exception as e:
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+    folder_path = SCRIPT_DIR / request.folder_path if request.folder_path != "." else SCRIPT_DIR
+    if not folder_path.exists() or not folder_path.is_dir(): return bad("文件夹不存在或不是目录")
+    set_target_folder(str(folder_path))
+    print(f"📁 工作文件夹: {rg_search_v6a.TARGET}, 文件数: {len(FILE_MAP)}")
+    return ok(success=True, message=f"已设置文件夹: {folder_path}", file_count=len(FILE_MAP), files=list(FILE_MAP.keys()))
+
+# ==================== 配置辅助函数 ====================
+def _apply_model(model_num, thinking_enabled=None):
+    rg_search_v6a.num = model_num
+    rg_search_v6a.MODEL_NAME = MODEL_DICT[model_num]["model_name"]
+    if thinking_enabled is not None: rg_search_v6a.THINKING_ENABLED = thinking_enabled
+    rg_search_v6a.CLIENT = None
 
 @app.post("/api/set-model")
 async def set_model(request: ModelRequest):
     """设置模型"""
-    try:
-        if request.model_num not in MODEL_DICT:
-            return JSONResponse({"success": False, "message": f"无效模型序号: {request.model_num}"}, status_code=400)
-        
-        rg_search_v6a.num = request.model_num
-        rg_search_v6a.MODEL_NAME = MODEL_DICT[request.model_num]["model_name"]
-        if request.thinking_enabled is not None: rg_search_v6a.THINKING_ENABLED = request.thinking_enabled
-        rg_search_v6a.CLIENT = None
-        print(f"🤖 模型: {rg_search_v6a.MODEL_NAME} (序号{request.model_num})")
-        
-        return JSONResponse({
-            "success": True,
-            "message": f"已设置模型: {rg_search_v6a.MODEL_NAME}",
-            "model_num": request.model_num,
-            "model_name": rg_search_v6a.MODEL_NAME,
-            "thinking_enabled": rg_search_v6a.THINKING_ENABLED
-        })
-    except Exception as e:
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+    if request.model_num not in MODEL_DICT: return bad(f"无效模型序号: {request.model_num}")
+    _apply_model(request.model_num, request.thinking_enabled)
+    print(f"🤖 模型: {rg_search_v6a.MODEL_NAME} (序号{request.model_num})")
+    return ok(success=True, message=f"已设置模型: {rg_search_v6a.MODEL_NAME}", model_num=request.model_num, model_name=rg_search_v6a.MODEL_NAME, thinking_enabled=rg_search_v6a.THINKING_ENABLED)
 
 @app.get("/api/models")
 async def get_models():
     """获取可用模型列表"""
-    try:
-        models = [{"id": k, "name": f"{v['model_name']} (序号{k})", "model_name": v['model_name'], **rg_search_v6a._thinking_caps(v)} for k, v in MODEL_DICT.items()]
-        return JSONResponse({"success": True, "models": models, "current": rg_search_v6a.num, "thinking_enabled": rg_search_v6a.THINKING_ENABLED})
-    except Exception as e:
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+    models = [{"id": k, "name": f"{v['model_name']} (序号{k})", "model_name": v['model_name'], **rg_search_v6a._thinking_caps(v)} for k, v in MODEL_DICT.items()]
+    return ok(success=True, models=models, current=rg_search_v6a.num, thinking_enabled=rg_search_v6a.THINKING_ENABLED)
 
 @app.post("/api/set-context-lines")
 async def set_context_lines(request: ContextLinesRequest):
     """设置上下文行数"""
-    try:
-        if not 0 <= request.context_lines <= 50:
-            return JSONResponse({"success": False, "message": "上下文行数必须在 0-50 之间"}, status_code=400)
-        
-        rg_search_v6a.CONTENT_LINES = request.context_lines
-        print(f"📏 上下文行数: {request.context_lines}")
-        return JSONResponse({"success": True, "message": f"已设置上下文行数: {request.context_lines}", "context_lines": request.context_lines})
-    except Exception as e:
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+    if not 0 <= request.context_lines <= 50: return bad("上下文行数必须在 0-50 之间")
+    rg_search_v6a.CONTENT_LINES = request.context_lines
+    print(f"📏 上下文行数: {request.context_lines}")
+    return ok(success=True, message=f"已设置上下文行数: {request.context_lines}", context_lines=request.context_lines)
 
 @app.get("/api/context-lines")
 async def get_context_lines():
     """获取当前上下文行数"""
-    return JSONResponse({"success": True, "context_lines": rg_search_v6a.CONTENT_LINES})
+    return ok(success=True, context_lines=rg_search_v6a.CONTENT_LINES)
 
 @app.get("/api/folders")
 async def get_folders(path: str = "."):
     """获取文件夹列表"""
-    try:
-        target_path = SCRIPT_DIR if path == "." else SCRIPT_DIR / path
-        if not target_path.exists() or not target_path.is_dir():
-            return JSONResponse({"error": "Folder not found"}, status_code=404)
-        
-        folders = [item.name for item in sorted(target_path.iterdir()) if item.is_dir() and not item.name.startswith('.')]
-        files_count = sum(1 for item in target_path.iterdir() if item.is_file() and item.suffix in ['.txt', '.md'])
-        parent = str(target_path.parent.relative_to(SCRIPT_DIR)) if target_path != SCRIPT_DIR else None
-        current = str(target_path.relative_to(SCRIPT_DIR)) if target_path != SCRIPT_DIR else "."
-        
-        return JSONResponse({"current": current, "parent": parent, "folders": folders, "files_count": files_count})
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    target_path = SCRIPT_DIR if path == "." else SCRIPT_DIR / path
+    if not target_path.exists() or not target_path.is_dir(): return JSONResponse({"error": "Folder not found"}, status_code=404)
+    folders = [item.name for item in sorted(target_path.iterdir()) if item.is_dir() and not item.name.startswith('.')]
+    files_count = sum(1 for item in target_path.iterdir() if item.is_file() and item.suffix in ['.txt', '.md'])
+    parent = str(target_path.parent.relative_to(SCRIPT_DIR)) if target_path != SCRIPT_DIR else None
+    current = str(target_path.relative_to(SCRIPT_DIR)) if target_path != SCRIPT_DIR else "."
+    return ok(current=current, parent=parent, folders=folders, files_count=files_count)
 
 @app.get("/api/index-status")
 async def get_index_status(folder: str = "texts"):
     """检查索引状态"""
-    try:
-        folder_path = SCRIPT_DIR / folder if folder != "." else SCRIPT_DIR
-        main_index = folder_path / ".index" / "index.json"
-        if main_index.exists():
-            index_files = list((folder_path / ".index").glob("*.index.json"))
-            return JSONResponse({"indexed": True, "file_count": len(index_files), "folder": folder})
-        return JSONResponse({"indexed": False, "folder": folder})
-    except:
-        return JSONResponse({"indexed": False, "folder": folder})
+    folder_path = SCRIPT_DIR / folder if folder != "." else SCRIPT_DIR
+    main_index = folder_path / ".index" / "index.json"
+    return ok(indexed=main_index.exists(), file_count=len(list((folder_path / ".index").glob("*.index.json"))) if main_index.exists() else 0, folder=folder)
 
 @app.post("/api/index-folder")
 async def index_folder_endpoint(request: IndexRequest):
@@ -180,8 +143,7 @@ async def index_folder_endpoint(request: IndexRequest):
     try:
         from extract_toc.scanner import scan_folder
         folder_path = SCRIPT_DIR / request.folder_path if request.folder_path != "." else SCRIPT_DIR
-        if not folder_path.exists() or not folder_path.is_dir():
-            return JSONResponse({"success": False, "message": "文件夹不存在"}, status_code=400)
+        if not folder_path.exists() or not folder_path.is_dir(): return bad("文件夹不存在")
         
         index_dir = folder_path / ".index"
         index_dir.mkdir(exist_ok=True)
@@ -196,11 +158,9 @@ async def index_folder_endpoint(request: IndexRequest):
             set_target_folder(str(folder_path))
             print(f"🔄 已刷新索引")
         
-        return JSONResponse({"success": True, "message": "索引生成成功", "index_count": len(index_files), "has_main_index": (index_dir / "index.json").exists()})
+        return ok(success=True, message="索引生成成功", index_count=len(index_files), has_main_index=(index_dir / "index.json").exists())
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+        return bad(str(e), 500)
 
 # ==================== WebSocket 查询接口 ====================
 @app.websocket("/ws/query")
@@ -239,28 +199,18 @@ async def query(ws: WebSocket):
 # ==================== 配置同步 ====================
 def _sync_config(folder_path, model_num, context_lines, thinking_enabled=None):
     """同步前端配置到后端"""
-    # 同步文件夹
-    try:
-        folder_full_path = SCRIPT_DIR / folder_path if folder_path != "." else SCRIPT_DIR
-        if folder_full_path.exists() and folder_full_path.is_dir():
-            set_target_folder(str(folder_full_path))
-            print(f"📁 同步文件夹: {rg_search_v6a.TARGET} ({len(FILE_MAP)} 文件)")
-    except Exception as e:
-        print(f"⚠️ 同步文件夹失败: {e}")
-    
-    # 同步模型
+    folder_full_path = SCRIPT_DIR / folder_path if folder_path != "." else SCRIPT_DIR
+    if folder_full_path.exists() and folder_full_path.is_dir():
+        set_target_folder(str(folder_full_path))
+        print(f"📁 同步文件夹: {rg_search_v6a.TARGET} ({len(FILE_MAP)} 文件)")
     if model_num is not None and model_num in MODEL_DICT:
-        rg_search_v6a.num = model_num
-        rg_search_v6a.MODEL_NAME = MODEL_DICT[model_num]["model_name"]
-        if thinking_enabled is not None: rg_search_v6a.THINKING_ENABLED = thinking_enabled
-        rg_search_v6a.CLIENT = None
+        _apply_model(model_num, thinking_enabled)
         print(f"🤖 同步模型: {rg_search_v6a.MODEL_NAME} (序号{model_num})")
-    
-    # 同步上下文行数
     if context_lines is not None and 0 <= context_lines <= 50:
         rg_search_v6a.CONTENT_LINES = context_lines
         print(f"📏 同步上下文: {context_lines} 行")
 
+# ==================== WebSocket 辅助函数 ====================
 def _alive(ws: WebSocket):
     return ws.client_state == WebSocketState.CONNECTED and ws.application_state == WebSocketState.CONNECTED
 
@@ -325,6 +275,18 @@ async def _stream_final_answer(ws: WebSocket, messages, thinking_id='thinking-fi
     await _safe_send_json(ws, {'type': 'final_answer', 'data': {'content': final.get('content')}})
     await _safe_close(ws)
 
+# ==================== 结果摘要辅助 ====================
+def _tool_summary(name, args, result):
+    return (
+        ('❌ 未找到匹配' if '未找到匹配项' in result or '未匹配任何文件' in result else '⚠️ 结果已重复' if '所有结果已重复' in result else f'✅ 找到 {m.group(1)} 条新记录' if (m := re.search(r'(\d+)\s*条新记录', result)) else '✅ 搜索完成')
+        if name == 'execute_grep' else
+        f'✅ 读取 {args["end_line"] - args["start_line"] + 1} 行'
+        if name == 'read_file_range' else
+        ('❌ 文件未找到' if 'error' in result else '✅ 目录获取成功')
+        if name == 'get_document_toc' else
+        ('❌ 未找到' if '未找到' in result else '✅ 搜索完成')
+    )
+
 # ==================== Agentic 模式处理 ====================
 async def _handle_agentic_mode(ws: WebSocket, question: str):
     """Agentic 模式：流式输出思考、工具调用和最终答案"""
@@ -360,13 +322,7 @@ async def _handle_agentic_mode(ws: WebSocket, question: str):
                 func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}.get(tc['function']['name'])
                 if func:
                     result = await asyncio.to_thread(func, **args, stream=False)
-                    summary = ('❌ 未找到匹配' if '未找到匹配项' in result or '未匹配任何文件' in result else
-                               '⚠️ 结果已重复' if '所有结果已重复' in result else
-                               f'✅ 找到 {m.group(1)} 条新记录' if (m := re.search(r'(\d+)\s*条新记录', result)) else '✅ 搜索完成') if tc['function']['name'] == 'execute_grep' else \
-                              f'✅ 读取 {args["end_line"] - args["start_line"] + 1} 行' if tc['function']['name'] == 'read_file_range' else \
-                              ('❌ 文件未找到' if 'error' in result else '✅ 目录获取成功')
-                    
-                    await _safe_send_json(ws, {'type': 'tool_result', 'data': {'tool_call_id': tc['id'], 'summary': summary}})
+                    await _safe_send_json(ws, {'type': 'tool_result', 'data': {'tool_call_id': tc['id'], 'summary': _tool_summary(tc['function']['name'], args, result)}})
                     messages.append({"role": "tool", "tool_call_id": tc['id'], "content": result})
         else:
             print(f"✅ [最终答案] 流式输出中...")
@@ -419,8 +375,7 @@ async def _handle_fast_mode(ws: WebSocket, question: str):
                     stream=False
                 )
                 
-                summary = '❌ 未找到' if '未找到' in result else '✅ 搜索完成'
-                await _safe_send_json(ws, {'type': 'tool_result', 'data': {'tool_call_id': tc['id'], 'summary': summary}})
+                await _safe_send_json(ws, {'type': 'tool_result', 'data': {'tool_call_id': tc['id'], 'summary': _tool_summary('search_documents', args, result)}})
                 msg2.append({"role": "tool", "tool_call_id": tc['id'], "content": result})
         
         # 第二轮：生成答案
@@ -431,8 +386,6 @@ async def _handle_fast_mode(ws: WebSocket, question: str):
         
     except Exception as e:
         print(f"❌ Fast模式错误: {e}")
-        import traceback
-        traceback.print_exc()
         await _safe_send_json(ws, {'type': 'error', 'data': {'message': str(e)}})
         await _safe_close(ws)
 
