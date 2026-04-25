@@ -57,6 +57,7 @@ def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
     return kw
 
 def _chat_stream(messages, tools=None, show_reasoning=False):
+    """流式消费模型输出，聚合回答文本、思考内容和工具调用。"""
     kw = build_chat_kwargs(messages, stream=True, tools=tools, temperature=1)
     rs, cs, tc_map, saw_r, saw_c = [], [], {}, False, False
     for chunk in get_client().chat.completions.create(**kw):
@@ -115,6 +116,7 @@ def _load_detail_toc(stem):
 
 # ==================== 章节上下文注入 ====================
 def get_chapter_context(filepath, line_num):
+    """根据命中的文件和行号，补出所在章节和小节信息。"""
     for ch in _load_detail_toc(Path(filepath).stem):
         if ch.get("line", 0) <= line_num:
             best_sec = next((s for s in reversed(ch.get("sections", [])) if s.get("line", 0) <= line_num), None)
@@ -135,6 +137,7 @@ def _parse_record_block(block):
     return (None, None, None, None, None)
 
 def annotate_grep_output(raw):
+    """把 grep 原始输出转成更适合给模型和人阅读的注解格式。"""
     blocks, current = [], []
     for line in raw.split("\n"):
         (blocks.append(current), current := []) if line == "--" else current.append(line)
@@ -183,6 +186,7 @@ def get_document_toc(filename, stream=False):
     return _stream(core, stream)
 
 def execute_grep(pattern, include_files=None, stream=False):
+    """执行带上下文的 rg 搜索，并对结果做去重和章节注解。"""
     def core():
         cmd = [RG_EXE, "-n", "-i", "-H", "-C", str(CONTENT_LINES), "-e", pattern, "-m", "50"]
         scope = "全库"
@@ -241,6 +245,7 @@ TOOLS_SCHEMA = [
 
 # ==================== Agent 主循环 ====================
 def run_agent(user_question, show_reasoning=False, stream=False):
+    """主循环：多轮调用工具，直到得到最终答案或达到轮次上限。"""
     def core():
         global SEARCH_RESULT_CACHE
         SEARCH_RESULT_CACHE = {}
