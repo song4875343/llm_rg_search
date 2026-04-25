@@ -63,6 +63,7 @@ class IndexRequest(BaseModel):
 
 class ModelRequest(BaseModel):
     model_num: int
+    thinking_enabled: bool | None = None
 
 class ContextLinesRequest(BaseModel):
     context_lines: int
@@ -102,6 +103,7 @@ async def set_model(request: ModelRequest):
         
         rg_search_v6a.num = request.model_num
         rg_search_v6a.MODEL_NAME = MODEL_DICT[request.model_num]["model_name"]
+        if request.thinking_enabled is not None: rg_search_v6a.THINKING_ENABLED = request.thinking_enabled
         rg_search_v6a.CLIENT = None
         print(f"🤖 模型: {rg_search_v6a.MODEL_NAME} (序号{request.model_num})")
         
@@ -109,7 +111,8 @@ async def set_model(request: ModelRequest):
             "success": True,
             "message": f"已设置模型: {rg_search_v6a.MODEL_NAME}",
             "model_num": request.model_num,
-            "model_name": rg_search_v6a.MODEL_NAME
+            "model_name": rg_search_v6a.MODEL_NAME,
+            "thinking_enabled": rg_search_v6a.THINKING_ENABLED
         })
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
@@ -118,8 +121,8 @@ async def set_model(request: ModelRequest):
 async def get_models():
     """获取可用模型列表"""
     try:
-        models = [{"id": k, "name": f"{v['model_name']} (序号{k})", "model_name": v['model_name']} for k, v in MODEL_DICT.items()]
-        return JSONResponse({"success": True, "models": models, "current": rg_search_v6a.num})
+        models = [{"id": k, "name": f"{v['model_name']} (序号{k})", "model_name": v['model_name'], **rg_search_v6a._thinking_caps(v)} for k, v in MODEL_DICT.items()]
+        return JSONResponse({"success": True, "models": models, "current": rg_search_v6a.num, "thinking_enabled": rg_search_v6a.THINKING_ENABLED})
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
@@ -213,12 +216,13 @@ async def query(ws: WebSocket):
         folder_path = data.get('folder_path', 'texts')
         model_num = data.get('model_num')
         context_lines = data.get('context_lines')
+        thinking_enabled = data.get('thinking_enabled')
         
         if not question:
             return await _safe_send_json(ws, {'type': 'error', 'data': {'message': '问题不能为空'}})
         
         # 同步配置
-        _sync_config(folder_path, model_num, context_lines)
+        _sync_config(folder_path, model_num, context_lines, thinking_enabled)
         
         print(f"🔧 模式: {mode}, 问题: {question}")
         
@@ -233,7 +237,7 @@ async def query(ws: WebSocket):
         await _safe_close(ws)
 
 # ==================== 配置同步 ====================
-def _sync_config(folder_path, model_num, context_lines):
+def _sync_config(folder_path, model_num, context_lines, thinking_enabled=None):
     """同步前端配置到后端"""
     # 同步文件夹
     try:
@@ -248,6 +252,7 @@ def _sync_config(folder_path, model_num, context_lines):
     if model_num is not None and model_num in MODEL_DICT:
         rg_search_v6a.num = model_num
         rg_search_v6a.MODEL_NAME = MODEL_DICT[model_num]["model_name"]
+        if thinking_enabled is not None: rg_search_v6a.THINKING_ENABLED = thinking_enabled
         rg_search_v6a.CLIENT = None
         print(f"🤖 同步模型: {rg_search_v6a.MODEL_NAME} (序号{model_num})")
     
@@ -277,8 +282,8 @@ async def _safe_close(ws: WebSocket):
 async def _chat_stream(ws: WebSocket, messages, tools=None, thinking_id=None, stream_content=True):
     loop = asyncio.get_event_loop()
     def stream_gen():
-        kw = dict(model=rg_search_v6a.MODEL_NAME, messages=messages, temperature=1, stream=True, stream_options={"include_usage": True})
-        if tools: kw.update(tools=tools, tool_choice="auto")
+        kw = rg_search_v6a.build_chat_kwargs(messages, stream=True, tools=tools, temperature=1)
+        kw["stream_options"] = {"include_usage": True}
         yield from get_client().chat.completions.create(**kw)
     gen = stream_gen()
     def get_next():
@@ -384,26 +389,7 @@ async def _handle_fast_mode(ws: WebSocket, question: str):
     
     try:
         if not _alive(ws): return
-        # 获取可用文件列表
-        available_files = rg_fast.get_available_files(str(rg_search_v6a.TARGET))
-        
-        system_prompt = f"""你是文档检索专家。
-
-可用文件列表：
-{', '.join(available_files)}
-
-工作流程：
-1. 分析用户问题，提取关键词和目标文件
-2. 调用 search_documents 工具搜索
-3. 基于搜索结果生成答案
-
-注意：
-- broad_keywords: 1-2个核心关键词
-- exact_keywords: 1个最特殊、最关键的元关键词
-- target_files: 从可用文件列表中选择1-3个最可能包含答案的文件
-- 必须先调用工具再回答"""
-
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": question}]
+        messages = rg_fast.build_tool_messages(question, str(rg_search_v6a.TARGET))
         
         # 第一轮：LLM 调用工具
         await _safe_send_json(ws, {'type': 'turn', 'data': {'turn': 1}})
@@ -439,10 +425,7 @@ async def _handle_fast_mode(ws: WebSocket, question: str):
         
         # 第二轮：生成答案
         await _safe_send_json(ws, {'type': 'turn', 'data': {'turn': 2}})
-        system_prompt_2 = f"""你是根据文档总结回答问题的专家
-根据文档已经检索到的信息为{msg2}，根据信息回答问题，并给出明确依据，未提及的不要回答。"""
-        
-        messages_2 = [{"role": "system", "content": system_prompt_2}, {"role": "user", "content": question}]
+        messages_2 = rg_fast.build_answer_messages(question, msg2)
         print(f"✅ [回答]: 流式输出中...")
         await _stream_final_answer(ws, messages_2, 'thinking-2')
         

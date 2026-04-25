@@ -912,6 +912,12 @@
             <div class="folder-list" id="modelList">
                 <div class="loading-text">Loading...</div>
             </div>
+            <div style="margin: 16px 0; padding: 12px; background: var(--bg-alt); border: 1px solid var(--border);">
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);">
+                    <input type="checkbox" id="thinkingToggle" checked onchange="updateThinkingToggle()">
+                    <span id="thinkingToggleLabel">开启思考</span>
+                </label>
+            </div>
             <div class="folder-actions">
                 <button class="modal-btn secondary" onclick="closeModelPicker()">Cancel</button>
             </div>
@@ -928,6 +934,8 @@
         let browsingPath = '.';
         let currentModelNum = 4;  // 默认序号4
         let currentContextLines = 10;  // 默认上下文行数
+        let currentThinkingEnabled = true;
+        let modelMeta = {};
 
         // Load settings from localStorage
         function loadSettings() {
@@ -935,6 +943,7 @@
             const savedMode = localStorage.getItem('searchMode');
             const savedModelNum = localStorage.getItem('currentModelNum');
             const savedContextLines = localStorage.getItem('currentContextLines');
+            const savedThinkingEnabled = localStorage.getItem('currentThinkingEnabled');
             
             if (savedFolder) {
                 currentFolderPath = savedFolder;
@@ -954,6 +963,7 @@
             if (savedContextLines) {
                 currentContextLines = parseInt(savedContextLines);
             }
+            if (savedThinkingEnabled !== null) currentThinkingEnabled = savedThinkingEnabled !== 'false';
         }
 
         // Save settings to localStorage
@@ -963,6 +973,7 @@
             localStorage.setItem('searchMode', selectedMode);
             localStorage.setItem('currentModelNum', currentModelNum);
             localStorage.setItem('currentContextLines', currentContextLines);
+            localStorage.setItem('currentThinkingEnabled', currentThinkingEnabled);
         }
 
         // Sync settings to backend
@@ -983,7 +994,7 @@
                 const modelRes = await fetch('/api/set-model', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model_num: currentModelNum })
+                    body: JSON.stringify({ model_num: currentModelNum, thinking_enabled: currentThinkingEnabled })
                 });
                 const modelData = await modelRes.json();
                 if (modelData.success) {
@@ -1038,6 +1049,8 @@
         const indexingModalContent = document.getElementById('indexingModalContent');
         const modelModal = document.getElementById('modelModal');
         const modelList = document.getElementById('modelList');
+        const thinkingToggle = document.getElementById('thinkingToggle');
+        const thinkingToggleLabel = document.getElementById('thinkingToggleLabel');
 
         document.title = 'fs-explorer';
 
@@ -1129,10 +1142,10 @@
                 const res = await fetch('/api/models');
                 const data = await res.json();
                 if (data.success) {
-                    const currentModel = data.models.find(m => m.id === currentModelNum);
-                    if (currentModel) {
-                        document.getElementById('currentModelDisplay').textContent = currentModel.model_name;
-                    }
+                const currentModel = data.models.find(m => m.id === currentModelNum);
+                if (currentModel) {
+                    document.getElementById('currentModelDisplay').textContent = `${currentModel.model_name}${currentModel.supported ? ` | 思考:${currentThinkingEnabled ? '开' : '关'}` : ' | 不支持思考开关'}`;
+                }
                 }
             } catch (e) {
                 console.error('获取模型信息失败:', e);
@@ -1194,19 +1207,36 @@
                     return;
                 }
 
+                modelMeta = Object.fromEntries(data.models.map(model => [model.id, model]));
+                if (typeof data.thinking_enabled === 'boolean') currentThinkingEnabled = data.thinking_enabled;
                 modelList.innerHTML = data.models.map(model => `
                     <div class="folder-item ${model.id === currentModelNum ? 'selected' : ''}" onclick="selectModel(${model.id}, '${esc(model.model_name)}')">
                         <span class="folder-icon">${model.id === currentModelNum ? '✓' : '○'}</span>
                         <span class="folder-name">${esc(model.name)}</span>
                     </div>
                 `).join('');
+                refreshThinkingToggle();
             } catch (e) {
                 modelList.innerHTML = `<div class="folder-empty">Error: ${esc(e.message)}</div>`;
             }
         }
 
+        function refreshThinkingToggle() {
+            const m = modelMeta[currentModelNum] || {};
+            thinkingToggle.checked = m.can_disable ? currentThinkingEnabled : true;
+            thinkingToggle.disabled = !m.supported || !m.can_disable;
+            thinkingToggleLabel.textContent = !m.supported ? '当前模型不支持思考开关' : m.can_disable ? '开启思考' : '当前模型仅支持开启思考';
+        }
+
+        function updateThinkingToggle() {
+            currentThinkingEnabled = thinkingToggle.checked;
+            saveSettings();
+        }
+
         async function selectModel(modelNum, modelName) {
             currentModelNum = modelNum;
+            refreshThinkingToggle();
+            currentThinkingEnabled = thinkingToggle.checked;
             saveSettings();  // Save to localStorage
             closeModelPicker();
             
@@ -1215,7 +1245,7 @@
                 const res = await fetch('/api/set-model', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model_num: modelNum })
+                    body: JSON.stringify({ model_num: modelNum, thinking_enabled: currentThinkingEnabled })
                 });
                 const data = await res.json();
                 if (data.success) {
@@ -1471,7 +1501,8 @@ print(calc_ratio(120, 80))
                     mode: searchMode,
                     folder_path: currentFolderPath,
                     model_num: currentModelNum,
-                    context_lines: currentContextLines
+                    context_lines: currentContextLines,
+                    thinking_enabled: currentThinkingEnabled
                 }));
             };
 

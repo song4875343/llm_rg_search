@@ -12,20 +12,37 @@ load_dotenv()
 
 # ================= 配置 =================
 MODEL_CONFIG = {
-    1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5'},
+    1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
-    3: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-235B-A22B-Instruct-2507'},
-    4: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3.5-27B'},
+    3: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-235B-A22B-Instruct-2507', 'thinking': 'qwen'},
+    4: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3.5-27B', 'thinking': 'qwen'},
     5: {'base_url': 'http://localhost:11434/v1', 'api_key': 'ollama', 'model_name': 'gemma4:e4b'},
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'kimi-k2.5:cloud'},
 }
 
 MODEL_NUM = 3
+THINKING_ENABLED = True
 config = MODEL_CONFIG[MODEL_NUM]
 client = OpenAI(base_url=config['base_url'], api_key=os.getenv(config['api_key']))
 model_name = config['model_name']
 
 print(f"🤖 使用模型: {model_name}，序号{MODEL_NUM}")
+
+def _thinking_caps(cfg=None):
+    cfg = cfg or config
+    kind = cfg.get('thinking')
+    forced = 'thinking' in cfg['model_name'].lower()
+    return {'supported': bool(kind), 'can_disable': bool(kind) and not forced, 'forced': forced, 'kind': kind}
+
+def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
+    kw = dict(model=model_name, messages=messages, temperature=temperature, stream=stream)
+    if tools: kw.update(tools=tools, tool_choice="auto")
+    caps = _thinking_caps()
+    if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED:
+        kw['extra_body'] = {'thinking': {'type': 'disabled'}}
+    elif caps['kind'] == 'qwen' and caps['can_disable']:
+        kw['extra_body'] = {'enable_thinking': THINKING_ENABLED}
+    return kw
 
 # ================= 工具定义 =================
 TOOLS = [{
@@ -50,6 +67,31 @@ TOOLS = [{
 get_available_files = lambda search_dir: sorted([f for root, _, files in os.walk(search_dir) for f in files if f.endswith(('.txt', '.md'))])
 
 cut_by_punctuation = lambda text: [s.strip() for s in re.findall(r'[^。！？.!?]+[。！？.!?]?', text.strip()) if s.strip()]
+
+def build_tool_messages(query: str, search_dir: str):
+    available_files = get_available_files(search_dir)
+    system_prompt = f"""你是文档检索专家。
+
+可用文件列表：
+{', '.join(available_files)}
+
+工作流程：
+1. 分析用户问题，提取关键词和目标文件
+2. 调用 search_documents 工具搜索
+3. 基于搜索结果生成答案
+
+注意：
+- broad_keywords: 1-2个核心关键词
+- exact_keywords: 1个最特殊、最关键的元关键词（可以是 broad_keywords 中较特殊的一个）
+- target_files: 从可用文件列表中选择1-3个最可能包含答案的文件
+- 必须先调用工具再回答"""
+    return [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}]
+
+def build_answer_messages(query: str, tool_results: list):
+    system_prompt = f"""你是根据文档总结回答问题的专家
+根据文档已经检索到的信息为{tool_results}，根据信息回答问题，并给出明确依据,未提及的不要回答。
+"""
+    return [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}]
 
 def chunk_file(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
     """将文件切分成 chunks（按句子边界切分）"""
@@ -258,29 +300,12 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
         msg = f"\n{'='*60}\n🚀 问题: {query}\n{'='*60}"
         yield msg if stream else print(msg) or None
         
-        available_files = get_available_files(search_dir)
-        system_prompt = f"""你是文档检索专家。
-
-可用文件列表：
-{', '.join(available_files)}
-
-工作流程：
-1. 分析用户问题，提取关键词和目标文件
-2. 调用 search_documents 工具搜索
-3. 基于搜索结果生成答案
-
-注意：
-- broad_keywords: 1-2个核心关键词
-- exact_keywords: 1个最特殊、最关键的元关键词（可以是 broad_keywords 中较特殊的一个）
-- target_files: 从可用文件列表中选择1-3个最可能包含答案的文件
-- 必须先调用工具再回答"""
-        
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}]
+        messages = build_tool_messages(query, search_dir)
         
         # 第一轮：LLM 调用工具
         msg = "\n[第1轮] LLM 分析问题并调用工具..."
         yield msg if stream else print(msg) or None
-        response = client.chat.completions.create(model=model_name, messages=messages, tools=TOOLS, tool_choice="auto", temperature=1)
+        response = client.chat.completions.create(**build_chat_kwargs(messages, tools=TOOLS, temperature=1))
         
         if not response or not response.choices:
             msg = "⚠️ API 返回空响应"
@@ -316,12 +341,8 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
         # 第二轮：LLM 生成答案
         msg = "\n[第2轮] LLM 生成最终答案..."
         yield msg if stream else print(msg) or None
-        system_prompt_2 = f"""你是根据文档总结回答问题的专家
-        根据文档已经检索到的信息为{msg2}，根据信息回答问题，并给出明确依据,未提及的不要回答。
-        """
-        
-        messages_2 = [{"role": "system", "content": system_prompt_2}, {"role": "user", "content": query}]
-        final_response = client.chat.completions.create(model=model_name, messages=messages_2, temperature=1, stream=stream)
+        messages_2 = build_answer_messages(query, msg2)
+        final_response = client.chat.completions.create(**build_chat_kwargs(messages_2, stream=stream, temperature=1))
         
         if stream:
             for chunk in final_response:
