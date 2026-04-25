@@ -1476,6 +1476,7 @@ print(calc_ratio(120, 80))
             setResultPanelState(false);
             streamMarkdown = '';  // 清空流式缓存
             firstChunk = true;
+            streamAutoFollow = false;
 
             // 清空左侧执行过程和右侧结果
             stepsList.innerHTML = '<div class="empty-state"><div class="prompt"></div><div class="hint"></div></div>';
@@ -1752,11 +1753,26 @@ print(calc_ratio(120, 80))
 
 let streamMarkdown = "";
         let firstChunk = true;
+        let streamAutoFollow = false;
+
+        function getResultStreamBottom() {
+            const resultTextEl = resultContent.querySelector('.result-text');
+            if (!resultTextEl) return null;
+            return resultTextEl.getBoundingClientRect().bottom;
+        }
+
+        function refreshStreamAutoFollow() {
+            if (!isRunning || firstChunk) return;
+            const resultBottom = getResultStreamBottom();
+            if (resultBottom === null) return;
+            streamAutoFollow = resultBottom <= window.innerHeight + 200;
+        }
         function appendStreamChunk(content) {
             if (firstChunk) {
                 resultContent.innerHTML = '<div class="result-text"></div>';
                 setResultPanelState(false);
                 firstChunk = false;
+                streamAutoFollow = true;
                 
                 // 强制渲染后滚动到顶部
                 requestAnimationFrame(() => window.scrollTo(0, 0));
@@ -1767,10 +1783,13 @@ let streamMarkdown = "";
             
             // 只在用户已经接近底部时才自动滚动一行
             requestAnimationFrame(() => {
-                const scrollBottom = window.innerHeight + window.scrollY;
-                const pageHeight = document.documentElement.scrollHeight;
-                if (pageHeight - scrollBottom < 200) {
-                    window.scrollBy(0, 60);
+                const resultBottom = getResultStreamBottom();
+                if (resultBottom === null || !streamAutoFollow) return;
+
+                const followThreshold = 120;
+                if (resultBottom > window.innerHeight - followThreshold) {
+                    const delta = resultBottom - window.innerHeight + followThreshold;
+                    window.scrollBy(0, Math.min(Math.max(delta, 40), 160));
                 }
             });
 }
@@ -2132,6 +2151,7 @@ let streamMarkdown = "";
         });
 
         // 窗口大小变化时也同步
+        window.addEventListener('scroll', refreshStreamAutoFollow, { passive: true });
         window.addEventListener('resize', syncSectionHeights);
 
         // 初始同步
