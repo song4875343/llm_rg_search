@@ -1901,7 +1901,7 @@ let streamMarkdown = "";
         function protectMathSegments(text) {
             const placeholders = [];
             const protectedText = text.replace(/\$\$[\s\S]+?\$\$|\$(?:\\.|[^$\n])+\$/g, (match) => {
-                const key = `@@MATH_${placeholders.length}@@`;
+                const key = `@@MATH${placeholders.length}@@`;
                 placeholders.push({ key, value: match });
                 return key;
             });
