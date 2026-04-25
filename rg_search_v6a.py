@@ -29,6 +29,41 @@ MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (S
 FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) if (TARGET / f).is_file() and f.endswith((".txt", ".md"))} if TARGET.exists() else {}
 DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE, CLIENT = {}, {}, None
 
+def _stream(core, stream=False):
+    g = core()
+    if stream: return g
+    try:
+        while True:
+            x = next(g)
+            print(*x[:1], end=x[1], flush=True) if isinstance(x, tuple) else print(x, flush=True)
+    except StopIteration as e:
+        return e.value
+
+def _chat_stream(messages, tools=None, show_reasoning=False):
+    kw = dict(model=MODEL_NAME, messages=messages, temperature=1, stream=True)
+    if tools: kw.update(tools=TOOLS_SCHEMA, tool_choice="auto")
+    rs, cs, tc_map, saw_r, saw_c = [], [], {}, False, False
+    for chunk in get_client().chat.completions.create(**kw):
+        delta = chunk.choices[0].delta
+        if show_reasoning and (r := getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)):
+            rs.append(r)
+            if not saw_r: saw_r = True; yield ("🧠 [思考]: ", "")
+            yield (r, "")
+        if c := getattr(delta, "content", None):
+            cs.append(c)
+            if not saw_c:
+                saw_c = True
+                yield (("\n" if saw_r else "") + "\n✅ [回答]: ", "")
+            yield (c, "")
+        for tc in getattr(delta, "tool_calls", None) or []:
+            cur = tc_map.setdefault(tc.index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+            if getattr(tc, "id", None): cur["id"] = tc.id
+            if f := getattr(tc, "function", None):
+                if getattr(f, "name", None): cur["function"]["name"] += f.name
+                if getattr(f, "arguments", None): cur["function"]["arguments"] += f.arguments
+    if saw_r or saw_c: yield ("", "\n")
+    return {"role": "assistant", "content": "".join(cs) or None, "tool_calls": [tc_map[i] for i in sorted(tc_map)] or None}, "".join(rs)
+
 def reset_search_cache():
     global SEARCH_RESULT_CACHE
     SEARCH_RESULT_CACHE = {}
@@ -115,76 +150,70 @@ def annotate_grep_output(raw):
                 if not matched: annotated.append(f"  {line}")
         annotated.append("--")
     
-    # 打印调试信息
-    print(f"      🔍 [注解] 解析块数: {len([b for b in blocks if b])}, 找到章节: {ctx_found}, 未找到: {ctx_not_found}")
-    if failed: print(f"      ❌ [失败示例前三条]: {', '.join(f'{f}:L{ln}' for f, ln in failed[:3])}")
-    
-    return "\n".join(annotated[:-1]) if annotated and annotated[-1] == "--" else "\n".join(annotated)
+    debug = [f"      🔍 [注解] 解析块数: {len([b for b in blocks if b])}, 找到章节: {ctx_found}, 未找到: {ctx_not_found}"]
+    if failed: debug.append(f"      ❌ [失败示例前三条]: {', '.join(f'{f}:L{ln}' for f, ln in failed[:3])}")
+    return ("\n".join(annotated[:-1]) if annotated and annotated[-1] == "--" else "\n".join(annotated)), debug
 
 
 # ==================== Agent 工具函数 ====================
-def get_document_toc(filename):
-    print(f"📑 [Tool: TOC] 获取详细目录: {filename}\n")
-    ensure_index_exists()
-    for k, v in FILE_MAP.items():
-        if filename in k:
-            return json.dumps(json.load(open(INDEX_DIR / f"{Path(v).stem}.index.json", "r", encoding="utf-8")), ensure_ascii=False, indent=2)
-    return json.dumps({"error": f"未找到 '{filename}'"}, ensure_ascii=False)
+def get_document_toc(filename, stream=False):
+    def core():
+        yield f"📑 [Tool: TOC] 获取详细目录: {filename}\n"
+        ensure_index_exists()
+        for k, v in FILE_MAP.items():
+            if filename in k:
+                return json.dumps(json.load(open(INDEX_DIR / f"{Path(v).stem}.index.json", "r", encoding="utf-8")), ensure_ascii=False, indent=2)
+        return json.dumps({"error": f"未找到 '{filename}'"}, ensure_ascii=False)
+    return _stream(core, stream)
 
-def execute_grep(pattern, include_files=None):
-    cmd = [RG_EXE, "-n", "-i", "-H", "-C", str(CONTENT_LINES), "-e", pattern, "-m", "50"]
-    scope = "全库"
-    if include_files:
-        targets = [(FILE_MAP[k], k) for req in include_files.split(",") for k in FILE_MAP if req.strip() in k]
-        if not targets: return f"系统反馈：'{include_files}' 未匹配任何文件"
-        cmd.extend([t[0] for t in targets])
-        scope = f"限定 {len(targets)} 个文件"
-    else:
-        cmd.append(str(TARGET))
-    
-    print(f"🛠️ [Grep] '{pattern}' ({scope})")
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-        if not res.stdout:
-            print(f"   📊 0命中") 
-            return "系统反馈：未找到匹配项"
-        
-        records, current = [], []
-        for line in res.stdout.strip().split("\n"):
-            (records.append(current), current := []) if line == "--" else current.append(line)
-        if current: records.append(current)
-        
-        # 去重处理
-        new_records, dup_count = [], 0
-        for record in records:
-            key = next((p[:2] for l in record if (p := _parse_grep_line(l))), None)
-            if key and key not in SEARCH_RESULT_CACHE:
-                SEARCH_RESULT_CACHE[key] = True
-                new_records.append(record)
-            elif key:
-                dup_count += 1
-            else:
-                new_records.append(record)
-        
-        print(f"   📊 命中: {len(records)} 条, 去重: {dup_count} 条, 新记录: {len(new_records)} 条")
-        if not new_records: return "系统反馈：所有结果已重复"
-        
-        output_lines = sum([list(r) + ["--"] for r in new_records[:20]], [])[:-1]
-        annotated = annotate_grep_output(chr(10).join(output_lines))
-        
-        return f"系统反馈：{len(new_records)} 条新记录:\n{annotated}"
-    except Exception as e:
-        return f"系统反馈：搜索出错 {e}"
+def execute_grep(pattern, include_files=None, stream=False):
+    def core():
+        cmd = [RG_EXE, "-n", "-i", "-H", "-C", str(CONTENT_LINES), "-e", pattern, "-m", "50"]
+        scope = "全库"
+        if include_files:
+            targets = [(FILE_MAP[k], k) for req in include_files.split(",") for k in FILE_MAP if req.strip() in k]
+            if not targets: return f"系统反馈：'{include_files}' 未匹配任何文件"
+            cmd.extend([t[0] for t in targets]); scope = f"限定 {len(targets)} 个文件"
+        else:
+            cmd.append(str(TARGET))
+        yield f"🛠️ [Grep] '{pattern}' ({scope})"
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+            if not res.stdout:
+                yield f"   📊 0命中"
+                return "系统反馈：未找到匹配项"
+            records, current = [], []
+            for line in res.stdout.strip().split("\n"):
+                (records.append(current), current := []) if line == "--" else current.append(line)
+            if current: records.append(current)
+            new_records, dup_count = [], 0
+            for record in records:
+                key = next((p[:2] for l in record if (p := _parse_grep_line(l))), None)
+                if key and key not in SEARCH_RESULT_CACHE:
+                    SEARCH_RESULT_CACHE[key] = True; new_records.append(record)
+                elif key: dup_count += 1
+                else: new_records.append(record)
+            yield f"   📊 命中: {len(records)} 条, 去重: {dup_count} 条, 新记录: {len(new_records)} 条"
+            if not new_records: return "系统反馈：所有结果已重复"
+            output_lines = sum([list(r) + ["--"] for r in new_records[:20]], [])[:-1]
+            annotated, debug = annotate_grep_output(chr(10).join(output_lines))
+            yield from debug
+            return f"系统反馈：{len(new_records)} 条新记录:\n{annotated}"
+        except Exception as e:
+            return f"系统反馈：搜索出错 {e}"
+    return _stream(core, stream)
 
-def read_file_range(filepath, start_line, end_line):
-    print(f"📖 [Tool: Read] 阅读: {os.path.basename(filepath)} (行 {start_line}-{end_line})\n")
-    try:
-        path = filepath if os.path.exists(filepath) else FILE_MAP.get(os.path.basename(filepath), filepath)
-        lines = open(path, "r", encoding="utf-8", errors="ignore").readlines()
-        content = "".join(lines[max(0, start_line - 1):min(len(lines), end_line)])
-        return f"--- {os.path.basename(path)} ---\n{content}\n--- 片段结束 ---"
-    except Exception as e:
-        return f"读取失败: {e}"
+def read_file_range(filepath, start_line, end_line, stream=False):
+    def core():
+        yield f"📖 [Tool: Read] 阅读: {os.path.basename(filepath)} (行 {start_line}-{end_line})\n"
+        try:
+            path = filepath if os.path.exists(filepath) else FILE_MAP.get(os.path.basename(filepath), filepath)
+            lines = open(path, "r", encoding="utf-8", errors="ignore").readlines()
+            content = "".join(lines[max(0, start_line - 1):min(len(lines), end_line)])
+            return f"--- {os.path.basename(path)} ---\n{content}\n--- 片段结束 ---"
+        except Exception as e:
+            return f"读取失败: {e}"
+    return _stream(core, stream)
 
 
 # ==================== 工具 Schema 定义 ====================
@@ -195,54 +224,45 @@ TOOLS_SCHEMA = [
 ]
 
 # ==================== Agent 主循环 ====================
-def run_agent(user_question, show_reasoning=False):
-    global SEARCH_RESULT_CACHE
-    SEARCH_RESULT_CACHE = {}
-    print(f"🚀 V7 Agent ({len(FILE_MAP)} 文件) | 问题: {user_question}")
-    
-    messages = [
-        {"role": "system", "content": f"""你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。
+def run_agent(user_question, show_reasoning=False, stream=False):
+    def core():
+        global SEARCH_RESULT_CACHE
+        SEARCH_RESULT_CACHE = {}
+        yield f"🚀 V7 Agent ({len(FILE_MAP)} 文件) | 问题: {user_question}"
+        messages = [
+            {"role": "system", "content": f"""你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。
 
 【资料库全局目录】
 {get_global_toc_summary()}
 
 【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)
 【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 """},
-        {"role": "user", "content": user_question},
-    ]
-    
-    for turn in range(15):
-        print(f"\n[第 {turn + 1} 轮]")
+            {"role": "user", "content": user_question},
+        ]
+        for turn in range(15):
+            yield f"\n[第 {turn + 1} 轮]"
+            try:
+                msg, _ = yield from _chat_stream(messages, TOOLS_SCHEMA, show_reasoning)
+            except Exception as e:
+                return f"API Error: {e}"
+            messages.append(msg)
+            if msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    args = json.loads(tc["function"]["arguments"])
+                    func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}[tc["function"]["name"]]
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": func(**args)})
+            else:
+                return msg.get("content")
+        messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
         try:
-            response = get_client().chat.completions.create(model=MODEL_NAME, messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto", temperature=1)
+            final, _ = yield from _chat_stream(messages)
+            return final.get("content")
         except Exception as e:
-            print(f"API Error: {e}")
-            break
-        
-        msg = response.choices[0].message
-        messages.append(msg)
-        if show_reasoning:
-            if r := getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None): 
-                print(f"🧠 [思考]: {r[:200]}...")
-        
-        if msg.tool_calls:
-            for tc in msg.tool_calls:
-                args = json.loads(tc.function.arguments)
-                func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}[tc.function.name]
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": func(**args)})
-        else:
-            print(f"\n✅ [回答]: {msg.content}")
-            return
-    
-    messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
-    try:
-        final = get_client().chat.completions.create(model=MODEL_NAME, messages=messages, temperature=1)
-        print(f"\n✅ [最终回答]: {final.choices[0].message.content}")
-    except Exception as e:
-        print(f"生成失败: {e}")
+            return f"生成失败: {e}"
+    return _stream(core, stream)
 
 
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
-    run_agent("门刚什么时候应设置揽风绳")
-    # run_agent('目录有哪几个文件',show_reasoning=True)
+    # run_agent("门刚什么时候应设置揽风绳")
+    run_agent("门刚什么时候应设置揽风绳",show_reasoning=True)

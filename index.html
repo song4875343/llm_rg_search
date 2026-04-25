@@ -923,6 +923,7 @@
         let ws = null;
         let stepCount = 0;
         let isRunning = false;
+        let manualStop = false;
         let currentFolderPath = 'texts';
         let browsingPath = '.';
         let currentModelNum = 4;  // 默认序号4
@@ -1418,7 +1419,12 @@ print(calc_ratio(120, 80))
         // Start query
         async function startQuery() {
             const query = queryInput.value.trim();
-            if (!query || isRunning) return;
+            if (isRunning) {
+                manualStop = true;
+                if (ws) ws.close(1000, 'interrupt');
+                return;
+            }
+            if (!query) return;
 
             if (query === '/demo') {
                 runDemoMode();
@@ -1434,8 +1440,9 @@ print(calc_ratio(120, 80))
             if (ws) { ws.close(); ws = null; }
 
             isRunning = true;
+            manualStop = false;
             stepCount = 0;
-            queryBtn.disabled = true;
+            queryBtn.textContent = 'Interrupt';
             setResultPanelState(false);
             streamMarkdown = '';  // 清空流式缓存
             firstChunk = true;
@@ -1479,7 +1486,10 @@ print(calc_ratio(120, 80))
                 finish();
             };
             
-            ws.onclose = () => finish();
+            ws.onclose = async () => {
+                if (manualStop) await showInterrupted();
+                finish();
+            };
         }
 
         // Handle message
@@ -1760,12 +1770,24 @@ let streamMarkdown = "";
             scrollProcessToLatest();
         }
 
+        async function showInterrupted() {
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+            resultContent.innerHTML = '<div class="empty-state"><div class="prompt">已被用户中止</div><div class="hint">等待新任务</div></div>';
+            setResultPanelState(false);
+            await updateStatusWithConfig('已中断', '');
+            scrollProcessToLatest();
+        }
+
         // Finish
         function finish() {
             isRunning = false;
             queryBtn.disabled = false;
+            queryBtn.textContent = 'Execute';
             progressBar.classList.remove('active');
             if (ws) { ws.close(); ws = null; }
+            manualStop = false;
         }
 
         // Update status

@@ -117,135 +117,149 @@ def _extract_context(filepath: str, line_num: int, context_lines: int = 0) -> st
 # ================= 搜索工具实现 =================
 def search_documents(query: str, broad_keywords: list, exact_keywords: list = None, 
                      target_files: list = None, search_dir: str = "./specs", 
-                     top_k: int = 15, context_lines: int = 0) -> str:
+                     top_k: int = 15, context_lines: int = 0, stream: bool = False):
     """四步走：RG搜索 -> 文件切块 -> BM25排序 -> 添加上下文"""
-    exact_keywords, target_files = exact_keywords or [], target_files or []
-    all_keywords = broad_keywords + exact_keywords
-    
-    print(f"\n🔍 原始问题: {query}\n🔍 关键词: 宽泛={broad_keywords}, 精确={exact_keywords}\n🔍 目标文件: {target_files}")
-    
-    # Step 1: RG 搜索收集匹配行
-    matching_lines = []
-    for kw in all_keywords:
-        try:
-            result = subprocess.run(['rg', '-n', '-i', kw, search_dir], capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            if result.returncode == 0:
-                matching_lines.extend([
-                    {'file': parts[0], 'line_num': int(parts[1]), 'content': parts[2], 'type': 'rg'}
-                    for line in result.stdout.strip().split('\n') if ':' in line
-                    for parts in [line.split(':', 2)] if len(parts) >= 3
-                ])
-        except Exception as e:
-            print(f"⚠️ 搜索 '{kw}' 出错: {e}")
-    
-    print(f"✅ RG 找到 {len(matching_lines)} 个匹配行")
-    
-    # Step 2: 读取目标文件并切块
-    file_chunks = []
-    for filename in target_files:
-        for root, _, filenames in os.walk(search_dir):
-            if filename in filenames:
-                chunks = chunk_file(os.path.join(root, filename), chunk_size=512, overlap=50)
-                file_chunks.extend(chunks)
-                print(f"✅ 文件 {filename} 切分为 {len(chunks)} 个 chunks")
-                break
-    
-    print(f"✅ 总共生成 {len(file_chunks)} 个文件 chunks")
-    
-    all_candidates = matching_lines + file_chunks
-    if not all_candidates:
-        return "未找到匹配内容"
-    
-    print(f"✅ 总候选内容: {len(all_candidates)} 条")
-    
-    # Step 3: BM25 排序
-    attach_bm25_scores(all_candidates, query)
-    
-    # 计算关键词加分
-    for item in all_candidates:
-        content_lower = item['content'].lower()
-        broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in content_lower)
-        keyword_bonus = 0.5 if broad_hit_count == 2 else (1.0 if broad_hit_count >= 3 else 0.0)
+    def _core():
+        _exact_keywords, _target_files = exact_keywords or [], target_files or []
+        all_keywords = broad_keywords + _exact_keywords
         
-        if exact_keywords and any(kw.lower() in content_lower for kw in exact_keywords):
-            keyword_bonus += 1.0
+        msg = f"\n🔍 原始问题: {query}\n🔍 关键词: 宽泛={broad_keywords}, 精确={_exact_keywords}\n🔍 目标文件: {_target_files}"
+        yield msg if stream else print(msg) or None
         
-        item['keyword_bonus'] = keyword_bonus
-        item['boosted_score'] = item['bm25_score'] + keyword_bonus
+        # Step 1: RG 搜索收集匹配行
+        matching_lines = []
+        for kw in all_keywords:
+            try:
+                result = subprocess.run(['rg', '-n', '-i', kw, search_dir], capture_output=True, text=True, encoding='utf-8', errors='ignore')
+                if result.returncode == 0:
+                    matching_lines.extend([
+                        {'file': parts[0], 'line_num': int(parts[1]), 'content': parts[2], 'type': 'rg'}
+                        for line in result.stdout.strip().split('\n') if ':' in line
+                        for parts in [line.split(':', 2)] if len(parts) >= 3
+                    ])
+            except Exception as e:
+                msg = f"⚠️ 搜索 '{kw}' 出错: {e}"
+                yield msg if stream else print(msg) or None
+        
+        msg = f"✅ RG 找到 {len(matching_lines)} 个匹配行"
+        yield msg if stream else print(msg) or None
+        
+        # Step 2: 读取目标文件并切块
+        file_chunks = []
+        for filename in _target_files:
+            for root, _, filenames in os.walk(search_dir):
+                if filename in filenames:
+                    chunks = chunk_file(os.path.join(root, filename), chunk_size=512, overlap=50)
+                    file_chunks.extend(chunks)
+                    msg = f"✅ 文件 {filename} 切分为 {len(chunks)} 个 chunks"
+                    yield msg if stream else print(msg) or None
+                    break
+        
+        msg = f"✅ 总共生成 {len(file_chunks)} 个文件 chunks"
+        yield msg if stream else print(msg) or None
+        
+        all_candidates = matching_lines + file_chunks
+        if not all_candidates:
+            yield "未找到匹配内容"
+            return
+        
+        msg = f"✅ 总候选内容: {len(all_candidates)} 条"
+        yield msg if stream else print(msg) or None
+        
+        # Step 3: BM25 排序
+        attach_bm25_scores(all_candidates, query)
+        
+        # 计算关键词加分
+        for item in all_candidates:
+            content_lower = item['content'].lower()
+            broad_hit_count = sum(1 for kw in broad_keywords if kw.lower() in content_lower)
+            keyword_bonus = 0.5 if broad_hit_count == 2 else (1.0 if broad_hit_count >= 3 else 0.0)
+            
+            if _exact_keywords and any(kw.lower() in content_lower for kw in _exact_keywords):
+                keyword_bonus += 1.0
+            
+            item['keyword_bonus'] = keyword_bonus
+            item['boosted_score'] = item['bm25_score'] + keyword_bonus
+        
+        bm25_sorted = sorted(all_candidates, key=lambda x: x['bm25_score'], reverse=True)
+        boosted_sorted = sorted(all_candidates, key=lambda x: x['boosted_score'], reverse=True)
+        
+        # 去重策略：RG 行优先
+        rg_contents = {item['content'].strip().lower() for item in bm25_sorted if item['type'] == 'rg'}
+        seen_rg, deduplicated = set(), []
+        
+        for item in bm25_sorted:
+            if item['type'] == 'rg':
+                key = get_candidate_key(item)
+                if key not in seen_rg:
+                    deduplicated.append(item)
+                    seen_rg.add(key)
+            else:
+                chunk_lower = item['content'].strip().lower()
+                if not any(rg_content in chunk_lower or chunk_lower in rg_content for rg_content in rg_contents):
+                    deduplicated.append(item)
+        
+        dedup_map = {get_candidate_key(item): item for item in deduplicated}
+        bm25_dedup = [item for item in bm25_sorted if get_candidate_key(item) in dedup_map]
+        boosted_dedup = [item for item in boosted_sorted if get_candidate_key(item) in dedup_map]
+        
+        # 合并结果
+        bm25_pick_count, boosted_pick_count = min(10, top_k), min(5, top_k)
+        merged_items, selected_keys = [], set()
+        
+        def add_candidates(candidates: list, source_name: str, limit: int = None):
+            added = 0
+            for candidate in candidates:
+                key = get_candidate_key(candidate)
+                if key in selected_keys:
+                    if source_name not in candidate.get('selected_by', []):
+                        candidate.setdefault('selected_by', []).append(source_name)
+                    continue
+                candidate['selected_by'] = [source_name]
+                merged_items.append(candidate)
+                selected_keys.add(key)
+                added += 1
+                if limit is not None and added >= limit:
+                    break
+        
+        add_candidates(bm25_dedup, 'bm25', bm25_pick_count)
+        add_candidates(boosted_dedup, 'boosted', boosted_pick_count)
+        add_candidates(bm25_dedup, 'bm25_fill')
+        
+        top_items = merged_items[:top_k]
+        top_items.sort(key=lambda item: (
+            1 if ('bm25' in item.get('selected_by', []) and 'boosted' in item.get('selected_by', [])) else 0,
+            item['boosted_score'],
+            item['bm25_score']
+        ), reverse=True)
+        
+        msg = f"📊 去重后: {len(deduplicated)} 条 (RG优先), BM25取前{bm25_pick_count} + 修正取前{boosted_pick_count} -> Top-{len(top_items)}"
+        yield msg if stream else print(msg) or None
+        
+        # Step 4: 添加上下文或直接返回 chunk
+        results = [
+            f"--- {os.path.basename(item['file'])}:行{item['line_num']} [RG] ---\n{_extract_context(item['file'], item['line_num'], context_lines)}\n"
+            if item['type'] == 'rg' else
+            f"--- {os.path.basename(item['file'])}:位置{item['start_pos']} [CHUNK] ---\n{item['content']}\n"
+            for item in top_items
+        ]
+        
+        final_result = "\n".join(results)
+        msg = f"\n✅ 返回内容总长度: {len(final_result)} 字符"
+        yield msg if stream else print(msg) or None
+        yield final_result
     
-    bm25_sorted = sorted(all_candidates, key=lambda x: x['bm25_score'], reverse=True)
-    boosted_sorted = sorted(all_candidates, key=lambda x: x['boosted_score'], reverse=True)
-    
-    # 去重策略：RG 行优先
-    rg_contents = {item['content'].strip().lower() for item in bm25_sorted if item['type'] == 'rg'}
-    seen_rg, deduplicated = set(), []
-    
-    for item in bm25_sorted:
-        if item['type'] == 'rg':
-            key = get_candidate_key(item)
-            if key not in seen_rg:
-                deduplicated.append(item)
-                seen_rg.add(key)
-        else:
-            chunk_lower = item['content'].strip().lower()
-            if not any(rg_content in chunk_lower or chunk_lower in rg_content for rg_content in rg_contents):
-                deduplicated.append(item)
-    
-    dedup_map = {get_candidate_key(item): item for item in deduplicated}
-    bm25_dedup = [item for item in bm25_sorted if get_candidate_key(item) in dedup_map]
-    boosted_dedup = [item for item in boosted_sorted if get_candidate_key(item) in dedup_map]
-    
-    # 合并结果
-    bm25_pick_count, boosted_pick_count = min(10, top_k), min(5, top_k)
-    merged_items, selected_keys = [], set()
-    
-    def add_candidates(candidates: list, source_name: str, limit: int = None):
-        added = 0
-        for candidate in candidates:
-            key = get_candidate_key(candidate)
-            if key in selected_keys:
-                if source_name not in candidate.get('selected_by', []):
-                    candidate.setdefault('selected_by', []).append(source_name)
-                continue
-            candidate['selected_by'] = [source_name]
-            merged_items.append(candidate)
-            selected_keys.add(key)
-            added += 1
-            if limit is not None and added >= limit:
-                break
-    
-    add_candidates(bm25_dedup, 'bm25', bm25_pick_count)
-    add_candidates(boosted_dedup, 'boosted', boosted_pick_count)
-    add_candidates(bm25_dedup, 'bm25_fill')
-    
-    top_items = merged_items[:top_k]
-    top_items.sort(key=lambda item: (
-        1 if ('bm25' in item.get('selected_by', []) and 'boosted' in item.get('selected_by', [])) else 0,
-        item['boosted_score'],
-        item['bm25_score']
-    ), reverse=True)
-    
-    print(f"📊 去重后: {len(deduplicated)} 条 (RG优先), BM25取前{bm25_pick_count} + 修正取前{boosted_pick_count} -> Top-{len(top_items)}")
-    
-    # Step 4: 添加上下文或直接返回 chunk
-    results = [
-        f"--- {os.path.basename(item['file'])}:行{item['line_num']} [RG] ---\n{_extract_context(item['file'], item['line_num'], context_lines)}\n"
-        if item['type'] == 'rg' else
-        f"--- {os.path.basename(item['file'])}:位置{item['start_pos']} [CHUNK] ---\n{item['content']}\n"
-        for item in top_items
-    ]
-    
-    final_result = "\n".join(results)
-    print(f"\n✅ 返回内容总长度: {len(final_result)} 字符")
-    return final_result
+    return _core() if stream else ''.join(filter(None, list(_core())))
 
 # ================= Agent 主循环 =================
-def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context_lines: int = 10):
+def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context_lines: int = 10, stream: bool = False):
     """两步 Agent：调用工具 -> 生成答案"""
-    print(f"\n{'='*60}\n🚀 问题: {query}\n{'='*60}")
-    
-    available_files = get_available_files(search_dir)
-    system_prompt = f"""你是文档检索专家。
+    def _core():
+        msg = f"\n{'='*60}\n🚀 问题: {query}\n{'='*60}"
+        yield msg if stream else print(msg) or None
+        
+        available_files = get_available_files(search_dir)
+        system_prompt = f"""你是文档检索专家。
 
 可用文件列表：
 {', '.join(available_files)}
@@ -260,51 +274,79 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
 - exact_keywords: 1个最特殊、最关键的元关键词（可以是 broad_keywords 中较特殊的一个）
 - target_files: 从可用文件列表中选择1-3个最可能包含答案的文件
 - 必须先调用工具再回答"""
+        
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}]
+        
+        # 第一轮：LLM 调用工具
+        msg = "\n[第1轮] LLM 分析问题并调用工具..."
+        yield msg if stream else print(msg) or None
+        response = client.chat.completions.create(model=model_name, messages=messages, tools=TOOLS, tool_choice="auto", temperature=1)
+        
+        if not response or not response.choices:
+            msg = "⚠️ API 返回空响应"
+            yield msg if stream else print(msg) or None
+            return
+        
+        msg_obj = response.choices[0].message
+        if not msg_obj.tool_calls:
+            msg = "⚠️ LLM 未生成关键词，结束"
+            yield msg if stream else print(msg) or None
+            return
+        
+        msg2 = []
+        for tool_call in msg_obj.tool_calls:
+            if tool_call.function.name == "search_documents":
+                args = json.loads(tool_call.function.arguments)
+                msg = f"📝 工具参数: {args}"
+                yield msg if stream else print(msg) or None
+                
+                result = search_documents(
+                    args.get("query", query),
+                    args.get("broad_keywords", []),
+                    args.get("exact_keywords", []),
+                    args.get("target_files", []),
+                    search_dir=search_dir,
+                    top_k=top_k,
+                    context_lines=context_lines,
+                    stream=False
+                )
+                
+                msg2.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
+        
+        # 第二轮：LLM 生成答案
+        msg = "\n[第2轮] LLM 生成最终答案..."
+        yield msg if stream else print(msg) or None
+        system_prompt_2 = f"""你是根据文档总结回答问题的专家
+        根据文档已经检索到的信息为{msg2}，根据信息回答问题，并给出明确依据,未提及的不要回答。
+        """
+        
+        messages_2 = [{"role": "system", "content": system_prompt_2}, {"role": "user", "content": query}]
+        final_response = client.chat.completions.create(model=model_name, messages=messages_2, temperature=1, stream=stream)
+        
+        if stream:
+            for chunk in final_response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        else:
+            if final_response and final_response.choices:
+                answer = final_response.choices[0].message.content
+                if not answer or len(answer) == 0:
+                    msg = f"⚠️ LLM 返回空答案！"
+                    yield msg if stream else print(msg) or None
+                else:
+                    msg = f"\n{'='*60}\n✅ 最终答案:\n{'='*60}\n{answer}\n{'='*60}"
+                    yield msg if stream else print(msg) or None
+            else:
+                msg = "⚠️ API 返回空响应"
+                yield msg if stream else print(msg) or None
     
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": query}]
-    
-    # 第一轮：LLM 调用工具
-    print("\n[第1轮] LLM 分析问题并调用工具...")
-    response = client.chat.completions.create(model=model_name, messages=messages, tools=TOOLS, tool_choice="auto", temperature=1)
-    
-    msg = response.choices[0].message
-    if not msg.tool_calls:
-        print("⚠️ LLM 未生成关键词，结束")
-        return
-    
-    msg2 = []
-    for tool_call in msg.tool_calls:
-        if tool_call.function.name == "search_documents":
-            args = json.loads(tool_call.function.arguments)
-            print(f"📝 工具参数: {args}")
-            
-            result = search_documents(
-                args.get("query", query),
-                args.get("broad_keywords", []),
-                args.get("exact_keywords", []),
-                args.get("target_files", []),
-                search_dir=search_dir,
-                top_k=top_k,
-                context_lines=context_lines
-            )
-            
-            msg2.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
-    
-    # 第二轮：LLM 生成答案
-    print("\n[第2轮] LLM 生成最终答案...")
-    system_prompt_2 = f"""你是根据文档总结回答问题的专家
-    根据文档已经检索到的信息为{msg2}，根据信息回答问题，并给出明确依据,未提及的不要回答。
-    """
-    
-    messages_2 = [{"role": "system", "content": system_prompt_2}, {"role": "user", "content": query}]
-    final_response = client.chat.completions.create(model=model_name, messages=messages_2, temperature=1)
-    
-    answer = final_response.choices[0].message.content
-    if not answer or len(answer) == 0:
-        print(f"⚠️ LLM 返回空答案！\n📝 Response 对象: {final_response}")
-    
-    print(f"\n{'='*60}\n✅ 最终答案:\n{'='*60}\n{answer}\n{'='*60}")
+    return _core() if stream else list(_core())
 
 # ================= 主程序 =================
 if __name__ == "__main__":
-    run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0)
+    # 非流式模式（默认）
+    # run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0)
+    
+    # 流式模式示例
+    for chunk in run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0, stream=True):
+        print(chunk, end='', flush=True)
