@@ -14,12 +14,12 @@ if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 num=4 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
-    2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.5'},
+    2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.7'},
     3: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-235B-A22B-Instruct-2507', 'thinking': 'qwen'},
     4: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3.5-27B', 'thinking': 'qwen'},
     5: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-30B-A3B-Instruct-2507', 'thinking': 'qwen'},
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'gemma4:31b-cloud'},
-    7: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'kimi-k2.5:cloud'},
+    7: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'qwen3.5:397b-cloud'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10
@@ -47,9 +47,14 @@ def _thinking_caps(cfg=None):
     return {'supported': bool(kind), 'can_disable': bool(kind) and not forced, 'forced': forced, 'kind': kind}
 
 def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
+    caps = _thinking_caps()
+    # Kimi 关闭思考模式时 temperature 必须为 0.6
+    if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED:
+        temperature = 0.6
+    
     kw = dict(model=MODEL_NAME, messages=messages, temperature=temperature, stream=stream)
     if tools: kw.update(tools=tools, tool_choice="auto")
-    caps = _thinking_caps()
+    
     if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED:
         kw['extra_body'] = {'thinking': {'type': 'disabled'}}
     elif caps['kind'] == 'qwen' and caps['can_disable']:

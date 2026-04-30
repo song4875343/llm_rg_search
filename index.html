@@ -1805,7 +1805,7 @@ let streamMarkdown = "";
             const content = streamMarkdown || data.content;
             resultContent.innerHTML = `<div class="result-text">${renderMarkdown(content)}</div>`;
             await updateStatusWithConfig('完成', '');
-            scrollProcessToLatest();
+            //scrollProcessToLatest();
         }
 
         // Show error

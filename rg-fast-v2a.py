@@ -34,10 +34,15 @@ def _thinking_caps(cfg=None):
     return {'supported': bool(kind), 'can_disable': bool(kind) and not forced, 'forced': forced, 'kind': kind}
 
 def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
+    caps = _thinking_caps()
+    # Kimi 关闭思考模式时 temperature 必须为 0.6
+    if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED:
+        temperature = 0.6
+    
     kw = {'model': model_name, 'messages': messages, 'temperature': temperature, 'stream': stream}
     if tools:
         kw.update(tools=tools, tool_choice="auto")
-    caps = _thinking_caps()
+    
     extra_body = (
         {'thinking': {'type': 'disabled'}} if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED else
         {'enable_thinking': THINKING_ENABLED} if caps['kind'] == 'qwen' and caps['can_disable'] else
