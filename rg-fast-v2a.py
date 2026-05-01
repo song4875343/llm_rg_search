@@ -162,11 +162,45 @@ def _extract_context(filepath: str, line_num: int, context_lines: int = 0) -> st
 
 def _run_rg(keyword: str, search_dir: str) -> list:
     result = subprocess.run(['rg', '-n', '-i', keyword, search_dir], capture_output=True, text=True, encoding='utf-8', errors='ignore')
-    return [
-        {'file': parts[0], 'line_num': int(parts[1]), 'content': parts[2], 'type': 'rg'}
-        for line in result.stdout.strip().split('\n') if ':' in line
-        for parts in [line.split(':', 2)] if len(parts) >= 3
-    ] if result.returncode == 0 else []
+    if result.returncode != 0:
+        return []
+    
+    matches = []
+    for line in result.stdout.strip().split('\n'):
+        if not line or ':' not in line:
+            continue
+        
+        # 更健壮的解析：从右往左找第二个冒号
+        parts = line.split(':')
+        if len(parts) < 3:
+            continue
+            
+        # 找到行号的位置（应该是纯数字）
+        line_num_idx = None
+        for i in range(1, len(parts)):
+            if parts[i].isdigit():
+                line_num_idx = i
+                break
+        
+        if line_num_idx is None:
+            continue
+            
+        try:
+            file_path = ':'.join(parts[:line_num_idx])
+            line_num = int(parts[line_num_idx])
+            content = ':'.join(parts[line_num_idx + 1:])
+            
+            matches.append({
+                'file': file_path,
+                'line_num': line_num,
+                'content': content,
+                'type': 'rg'
+            })
+        except (ValueError, IndexError):
+            # 如果解析失败，跳过这一行
+            continue
+    
+    return matches
 
 def _find_target_path(search_dir: str, filename: str):
     return next((os.path.join(root, filename) for root, _, files in os.walk(search_dir) if filename in files), None)
