@@ -20,6 +20,7 @@ MODEL_DICT = {
     5: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-30B-A3B-Instruct-2507', 'thinking': 'qwen'},
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'gemma4:31b-cloud'},
     7: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'qwen3.5:397b-cloud'},
+    8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10
@@ -59,6 +60,8 @@ def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
         kw['extra_body'] = {'thinking': {'type': 'disabled'}}
     elif caps['kind'] == 'qwen' and caps['can_disable']:
         kw['extra_body'] = {'enable_thinking': THINKING_ENABLED}
+    elif caps['kind'] == 'deepseek' and caps['can_disable']:
+        kw['extra_body'] = {'thinking': {'type': 'enabled' if THINKING_ENABLED else 'disabled'}}
     return kw
 
 def _chat_stream(messages, tools=None, show_reasoning=False):
