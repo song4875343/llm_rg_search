@@ -7,6 +7,7 @@ from bm25_module import BM25
 
 load_dotenv()
 
+# ===== 模型与客户端初始化 =====
 MODEL_CONFIG = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.7'},
@@ -18,13 +19,14 @@ MODEL_CONFIG = {
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
 }
 
-MODEL_NUM, THINKING_ENABLED = 3, True
+MODEL_NUM, THINKING_ENABLED = 5, True
 SHOW_THINKING_STREAM = True
 config = MODEL_CONFIG[MODEL_NUM]
 client = OpenAI(base_url=config['base_url'], api_key=os.getenv(config['api_key']))
 model_name = config['model_name']
 print(f"🤖 使用模型: {model_name}，序号{MODEL_NUM}")
 
+# ===== Function Call 工具定义 =====
 TOOLS = [{
     "type": "function",
     "function": {
@@ -43,6 +45,8 @@ TOOLS = [{
     },
 }]
 
+# 辅助函数：提示词构造、流式输出、切块、BM25 打分、rg 解析、去重融合、结果格式化
+# ================= 辅助函数 =================
 def _delta_piece(delta):
     extra = getattr(delta, 'model_extra', None) or {}
     fields = ('reasoning_content', 'reasoning', 'thinking_content', 'thinking') if SHOW_THINKING_STREAM else ()
@@ -136,7 +140,7 @@ def build_tool_messages(query, search_dir):
 
 def build_answer_messages(query, tool_results):
     return [{"role": "system", "content": f"""你是根据文档总结回答问题的专家
-根据文档已经检索到的信息为{tool_results}，根据信息回答问题，并给出明确依据,未提及的不要回答。
+根据文档已经检索到的信息为{tool_results}，根据信息极短思考，清晰简要回答问题，并给出明确依据,未提及的不要回答。
 """}, {"role": "user", "content": query}]
 
 def chunk_file(filepath, chunk_size=512, overlap=50):
@@ -244,6 +248,7 @@ def format_result(item, context_lines):
         return f"--- {os.path.basename(item['file'])}:行{item['line_num']} [RG] ---\n{extract_context(item['file'], item['line_num'], context_lines)}\n"
     return f"--- {os.path.basename(item['file'])}:位置{item['start_pos']} [CHUNK] ---\n{item['content']}\n"
 
+# ================= 搜索工具实现 =================
 def search_documents(query, broad_keywords, exact_keywords=None, target_files=None, search_dir='./specs', top_k=15, context_lines=0, stream=False):
     def core():
         exact, targets = exact_keywords or [], target_files or []
@@ -293,6 +298,7 @@ def search_documents(query, broad_keywords, exact_keywords=None, target_files=No
 
     return core() if stream else ''.join(filter(None, list(core())))
 
+# ================= Agent 主循环(实际为两步) =================
 def run_search(query, search_dir='./texts', top_k=10, context_lines=10, stream=False):
     def call_dicts(resp):
         return [{'id': c.id, 'function': {'name': c.function.name, 'arguments': c.function.arguments}} for c in (resp.choices[0].message.tool_calls or [])]
@@ -341,6 +347,7 @@ def run_search(query, search_dir='./texts', top_k=10, context_lines=10, stream=F
 
     return core() if stream else list(core())
 
+# ================= 主程序 =================
 if __name__ == '__main__':
     for chunk in run_search(query='独立基础的宽高比', search_dir='./specs', top_k=10, context_lines=0, stream=True):
         print(chunk, end='', flush=True)

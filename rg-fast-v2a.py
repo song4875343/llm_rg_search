@@ -22,7 +22,7 @@ MODEL_CONFIG = {
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
 }
 
-MODEL_NUM = 3
+MODEL_NUM = 8
 THINKING_ENABLED = True
 config = MODEL_CONFIG[MODEL_NUM]
 client = OpenAI(base_url=config['base_url'], api_key=os.getenv(config['api_key']))
@@ -99,7 +99,7 @@ def build_tool_messages(query: str, search_dir: str):
 
 def build_answer_messages(query: str, tool_results: list):
     return [{"role": "system", "content": f"""你是根据文档总结回答问题的专家
-根据文档已经检索到的信息为{tool_results}，根据信息回答问题，并给出明确依据,未提及的不要回答。
+根据文档已经检索到的信息为{tool_results}，根据信息极短思考，清晰简要回答问题，并给出明确依据,未提及的不要回答。
 """}, {"role": "user", "content": query}]
 
 def _emit(stream, msg):
