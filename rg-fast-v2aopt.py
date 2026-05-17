@@ -299,7 +299,7 @@ def search_documents(query, broad_keywords, exact_keywords=None, target_files=No
     return core() if stream else ''.join(filter(None, list(core())))
 
 # ================= Agent 主循环(实际为两步) =================
-def run_search(query, search_dir='./texts', top_k=10, context_lines=10, stream=False):
+def run_search(query, search_dir='./texts', top_k=15, context_lines=10, stream=False):
     def call_dicts(resp):
         return [{'id': c.id, 'function': {'name': c.function.name, 'arguments': c.function.arguments}} for c in (resp.choices[0].message.tool_calls or [])]
 
@@ -349,5 +349,5 @@ def run_search(query, search_dir='./texts', top_k=10, context_lines=10, stream=F
 
 # ================= 主程序 =================
 if __name__ == '__main__':
-    for chunk in run_search(query='独立基础的宽高比', search_dir='./specs', top_k=10, context_lines=0, stream=True):
+    for chunk in run_search(query='跟扩展基础的宽高比有关的规定', search_dir='./specs', top_k=15, context_lines=0, stream=True):
         print(chunk, end='', flush=True)

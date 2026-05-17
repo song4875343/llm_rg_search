@@ -257,7 +257,7 @@ async def _handle_mode(ws: WebSocket, question: str, mode: str):
                 ws,
                 msg.get("tool_calls"),
                 (lambda n, a: asyncio.to_thread(_tool_funcs[n], **a, stream=False) if n in _tool_funcs else None) if agentic
-                else lambda n, a: asyncio.to_thread(rg_fast.search_documents, a.get("query", question), a.get("broad_keywords", []), a.get("exact_keywords", []), a.get("target_files", []), search_dir=str(rg_search_v6a.TARGET), top_k=10, context_lines=rg_search_v6a.CONTENT_LINES, stream=False) if n == "search_documents" else None,
+                else lambda n, a: asyncio.to_thread(rg_fast.search_documents, a.get("query", question), a.get("broad_keywords", []), a.get("exact_keywords", []), a.get("target_files", []), search_dir=str(rg_search_v6a.TARGET), top_k=15, context_lines=rg_search_v6a.CONTENT_LINES, stream=False) if n == "search_documents" else None,
             )
             if tool_msgs is None: return
             if not agentic:
