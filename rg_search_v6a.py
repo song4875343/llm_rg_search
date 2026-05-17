@@ -47,21 +47,22 @@ def _thinking_caps(cfg=None):
     forced = 'thinking' in cfg['model_name'].lower()
     return {'supported': bool(kind), 'can_disable': bool(kind) and not forced, 'forced': forced, 'kind': kind}
 
-def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
+def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinking_enabled_override=None):
     caps = _thinking_caps()
+    thinking_enabled = THINKING_ENABLED if thinking_enabled_override is None else thinking_enabled_override
     # Kimi 关闭思考模式时 temperature 必须为 0.6
-    if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED:
+    if caps['kind'] == 'kimi' and caps['can_disable'] and not thinking_enabled:
         temperature = 0.6
     
     kw = dict(model=MODEL_NAME, messages=messages, temperature=temperature, stream=stream)
     if tools: kw.update(tools=tools, tool_choice="auto")
     
-    if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED:
+    if caps['kind'] == 'kimi' and caps['can_disable'] and not thinking_enabled:
         kw['extra_body'] = {'thinking': {'type': 'disabled'}}
     elif caps['kind'] == 'qwen' and caps['can_disable']:
-        kw['extra_body'] = {'enable_thinking': THINKING_ENABLED}
+        kw['extra_body'] = {'enable_thinking': thinking_enabled}
     elif caps['kind'] == 'deepseek' and caps['can_disable']:
-        kw['extra_body'] = {'thinking': {'type': 'enabled' if THINKING_ENABLED else 'disabled'}}
+        kw['extra_body'] = {'thinking': {'type': 'enabled' if thinking_enabled else 'disabled'}}
     return kw
 
 def _chat_stream(messages, tools=None, show_reasoning=False):

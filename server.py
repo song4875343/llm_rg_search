@@ -90,7 +90,13 @@ async def _safe_close(ws: WebSocket):
 async def _chat_stream(ws: WebSocket, messages, tools=None, thinking_id=None, stream_content=True, tool_choice=None):
     """流式消费模型输出，聚合回答、思考内容和工具调用。"""
     loop = asyncio.get_event_loop()
-    kwargs = rg_search_v6a.build_chat_kwargs(messages, stream=True, tools=tools, temperature=1)
+    kwargs = rg_search_v6a.build_chat_kwargs(
+        messages,
+        stream=True,
+        tools=tools,
+        temperature=1,
+        thinking_enabled_override=False if tool_choice is not None else None,
+    )
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
     gen = get_client().chat.completions.create(**(kwargs | {"stream_options": {"include_usage": True}}))

@@ -104,17 +104,18 @@ def thinking_caps(cfg=None):
     forced = 'thinking' in cfg['model_name'].lower()
     return {'kind': kind, 'supported': bool(kind), 'forced': forced, 'can_disable': bool(kind) and not forced}
 
-def build_chat_kwargs(messages, stream=False, tools=None, temperature=1):
+def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinking_enabled_override=None):
     caps = thinking_caps()
-    if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED:
+    thinking_enabled = THINKING_ENABLED if thinking_enabled_override is None else thinking_enabled_override
+    if caps['kind'] == 'kimi' and caps['can_disable'] and not thinking_enabled:
         temperature = 0.6
     kwargs = {'model': model_name, 'messages': messages, 'temperature': temperature, 'stream': stream}
     if tools:
         kwargs.update(tools=tools, tool_choice='auto')
     extra_body = (
-        {'thinking': {'type': 'disabled'}} if caps['kind'] == 'kimi' and caps['can_disable'] and not THINKING_ENABLED else
-        {'enable_thinking': THINKING_ENABLED} if caps['kind'] == 'qwen' and caps['can_disable'] else
-        {'thinking': {'type': 'enabled' if THINKING_ENABLED else 'disabled'}} if caps['kind'] == 'deepseek' and caps['can_disable'] else
+        {'thinking': {'type': 'disabled'}} if caps['kind'] == 'kimi' and caps['can_disable'] and not thinking_enabled else
+        {'enable_thinking': thinking_enabled} if caps['kind'] == 'qwen' and caps['can_disable'] else
+        {'thinking': {'type': 'enabled' if thinking_enabled else 'disabled'}} if caps['kind'] == 'deepseek' and caps['can_disable'] else
         None
     )
     if extra_body:
@@ -307,8 +308,8 @@ def run_search(query, search_dir='./texts', top_k=15, context_lines=10, stream=F
         yield from emit(stream, f"\n{'=' * 60}\n🚀 问题: {query}\n{'=' * 60}")
         yield from emit(stream, "\n[第1轮] LLM 分析问题并调用工具...")
 
-        kw = build_chat_kwargs(build_tool_messages(query, search_dir), stream=stream, tools=TOOLS, temperature=1)
-        # 第一轮一定要检索，强制调用工具，避免额外的“是否调用”判断开销
+        kw = build_chat_kwargs(build_tool_messages(query, search_dir), stream=stream, tools=TOOLS, temperature=1, thinking_enabled_override=False)
+        # 第一轮一定要检索，直接强制调用工具；这一步也不需要 thinking。
         kw['tool_choice'] = {'type': 'function', 'function': {'name': 'search_documents'}}
         if stream:
             buf = {}
