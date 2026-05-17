@@ -87,12 +87,13 @@ async def _safe_close(ws: WebSocket):
         pass
 
 
-async def _chat_stream(ws: WebSocket, messages, tools=None, thinking_id=None, stream_content=True):
+async def _chat_stream(ws: WebSocket, messages, tools=None, thinking_id=None, stream_content=True, tool_choice=None):
     """流式消费模型输出，聚合回答、思考内容和工具调用。"""
     loop = asyncio.get_event_loop()
-    gen = get_client().chat.completions.create(
-        **(rg_search_v6a.build_chat_kwargs(messages, stream=True, tools=tools, temperature=1) | {"stream_options": {"include_usage": True}})
-    )
+    kwargs = rg_search_v6a.build_chat_kwargs(messages, stream=True, tools=tools, temperature=1)
+    if tool_choice is not None:
+        kwargs["tool_choice"] = tool_choice
+    gen = get_client().chat.completions.create(**(kwargs | {"stream_options": {"include_usage": True}}))
     full_reasoning = full_content = ""
     tool_calls = {}
     while _alive(ws):
@@ -245,7 +246,8 @@ async def _handle_mode(ws: WebSocket, question: str, mode: str):
         for turn in range(15 if agentic else 2):
             if not _alive(ws): return
             await _safe_send_json(ws, {"type": "turn", "data": {"turn": turn + 1}})
-            msg = await _chat_stream(ws, messages, tools, f"thinking-{'agentic-' if agentic else ''}{turn + 1}", stream_content=False)
+            tool_choice = None if agentic or turn > 0 else {"type": "function", "function": {"name": "search_documents"}}
+            msg = await _chat_stream(ws, messages, tools, f"thinking-{'agentic-' if agentic else ''}{turn + 1}", stream_content=False, tool_choice=tool_choice)
             if not agentic and not msg.get("tool_calls"):
                 await _safe_send_json(ws, {"type": "final_answer", "data": {"content": "无法生成搜索关键词"}})
                 return await _safe_close(ws)

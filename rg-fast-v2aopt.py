@@ -308,6 +308,8 @@ def run_search(query, search_dir='./texts', top_k=15, context_lines=10, stream=F
         yield from emit(stream, "\n[第1轮] LLM 分析问题并调用工具...")
 
         kw = build_chat_kwargs(build_tool_messages(query, search_dir), stream=stream, tools=TOOLS, temperature=1)
+        # 第一轮一定要检索，强制调用工具，避免额外的“是否调用”判断开销
+        kw['tool_choice'] = {'type': 'function', 'function': {'name': 'search_documents'}}
         if stream:
             buf = {}
             yield from emit(True, client.chat.completions.create(**kw), buf, label_answer=False)

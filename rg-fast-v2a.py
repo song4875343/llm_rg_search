@@ -22,8 +22,8 @@ MODEL_CONFIG = {
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
 }
 
-MODEL_NUM = 8
-THINKING_ENABLED = True
+MODEL_NUM = 5
+THINKING_ENABLED = False
 config = MODEL_CONFIG[MODEL_NUM]
 client = OpenAI(base_url=config['base_url'], api_key=os.getenv(config['api_key']))
 model_name = config['model_name']
@@ -314,7 +314,10 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
         yield from _emit(stream, f"\n{'='*60}\n🚀 问题: {query}\n{'='*60}")
         messages = build_tool_messages(query, search_dir)
         yield from _emit(stream, "\n[第1轮] LLM 分析问题并调用工具...")
-        response = client.chat.completions.create(**build_chat_kwargs(messages, tools=TOOLS, temperature=1))
+        first_round_kwargs = build_chat_kwargs(messages, tools=TOOLS, temperature=1)
+        # 第一轮一定要检索，强制调用工具，避免额外的“是否调用”判断开销
+        first_round_kwargs["tool_choice"] = {"type": "function", "function": {"name": "search_documents"}}
+        response = client.chat.completions.create(**first_round_kwargs)
         if not response or not response.choices:
             yield from _emit(stream, "⚠️ API 返回空响应")
             return
