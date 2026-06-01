@@ -31,7 +31,7 @@ Qwen/Qwen3.5-122B-A10B
 moonshotai/Kimi-K2.5
 总的来讲qwen的或者原生的都行，英伟达的不太好
 '''
-index=4
+index=1
 # ================= 配置区 =================
 model_dict={1:{'factory_name':'kimi','base_url':'https://api.moonshot.cn/v1','api_key':'kimi_key','model_name':'kimi-k2.5'},
             2:{'factory_name':'nvidia','base_url':'https://integrate.api.nvidia.com/v1','api_key':'nvidia_key','model_name':'minimaxai/minimax-m2.5'},

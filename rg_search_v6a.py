@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
-num=4 #选择的模型序号
+num=8 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.7'},
@@ -27,6 +27,7 @@ CONTENT_LINES=10
 THINKING_ENABLED = True
 print(f"🤖 当前使用模型: {MODEL_NAME} (序号: {num})")
 TARGET, INDEX_DIR = SCRIPT_DIR / "texts", SCRIPT_DIR / "texts" / ".index"
+# TARGET, INDEX_DIR = SCRIPT_DIR / "specs", SCRIPT_DIR / "specs" / ".index"
 MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (SCRIPT_DIR / "rg.exe").exists() else "rg")
 FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) if (TARGET / f).is_file() and f.endswith((".txt", ".md"))} if TARGET.exists() else {}
 DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE, CLIENT = {}, {}, None
@@ -65,22 +66,23 @@ def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinkin
         kw['extra_body'] = {'thinking': {'type': 'enabled' if thinking_enabled else 'disabled'}}
     return kw
 
-def _chat_stream(messages, tools=None, show_reasoning=False):
+def _chat_stream(messages, tools=None, show_reasoning=False, thinking_enabled_override=None, stream_content=True):
     """流式消费模型输出，聚合回答文本、思考内容和工具调用。"""
-    kw = build_chat_kwargs(messages, stream=True, tools=tools, temperature=1)
+    kw = build_chat_kwargs(messages, stream=True, tools=tools, temperature=1, thinking_enabled_override=thinking_enabled_override)
     rs, cs, tc_map, saw_r, saw_c = [], [], {}, False, False
     for chunk in get_client().chat.completions.create(**kw):
         delta = chunk.choices[0].delta
-        if show_reasoning and (r := getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)):
+        if r := getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None):
             rs.append(r)
-            if not saw_r: saw_r = True; yield ("🧠 [思考]: ", "")
-            yield (r, "")
+            if show_reasoning:
+                if not saw_r: saw_r = True; yield ("🧠 [思考]: ", "")
+                yield (r, "")
         if c := getattr(delta, "content", None):
             cs.append(c)
-            if not saw_c:
+            if stream_content and not saw_c:
                 saw_c = True
                 yield (("\n" if saw_r else "") + "\n✅ [回答]: ", "")
-            yield (c, "")
+            if stream_content: yield (c, "")
         for tc in getattr(delta, "tool_calls", None) or []:
             cur = tc_map.setdefault(tc.index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
             if getattr(tc, "id", None): cur["id"] = tc.id
@@ -88,7 +90,7 @@ def _chat_stream(messages, tools=None, show_reasoning=False):
                 if getattr(f, "name", None): cur["function"]["name"] += f.name
                 if getattr(f, "arguments", None): cur["function"]["arguments"] += f.arguments
     if saw_r or saw_c: yield ("", "\n")
-    return {"role": "assistant", "content": "".join(cs) or None, "tool_calls": [tc_map[i] for i in sorted(tc_map)] or None}, "".join(rs)
+    return {"role": "assistant", "content": "".join(cs) or None, "tool_calls": [tc_map[i] for i in sorted(tc_map)] or None, "reasoning_content": "".join(rs) or None}, "".join(rs)
 
 def reset_search_cache():
     global SEARCH_RESULT_CACHE
@@ -266,15 +268,16 @@ def run_agent(user_question, show_reasoning=False, stream=False):
 {get_global_toc_summary()}
 
 【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)
-【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 """},
+【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 3.信息不足时继续换关键词、查目录或读原文深挖，直到获得确凿证据 """},
             {"role": "user", "content": user_question},
         ]
         for turn in range(15):
             yield f"\n[第 {turn + 1} 轮]"
             try:
-                msg, _ = yield from _chat_stream(messages, TOOLS_SCHEMA, show_reasoning)
+                msg, _ = yield from _chat_stream(messages, TOOLS_SCHEMA, show_reasoning, stream_content=False)
             except Exception as e:
-                return f"API Error: {e}"
+                yield f"API Error: {e}"
+                return
             messages.append(msg)
             if msg.get("tool_calls"):
                 for tc in msg["tool_calls"]:
@@ -282,17 +285,23 @@ def run_agent(user_question, show_reasoning=False, stream=False):
                     func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}[tc["function"]["name"]]
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": func(**args)})
             else:
-                return msg.get("content")
+                yield "\n✅ [最终答案] 流式输出中..."
+                try:
+                    final, _ = yield from _chat_stream(messages, thinking_enabled_override=False)
+                    if not final.get("content") and msg.get("content"): yield msg["content"]
+                except Exception as e:
+                    yield msg.get("content") or f"API Error: {e}"
+                return
         messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
         try:
-            final, _ = yield from _chat_stream(messages)
-            return final.get("content")
+            final, _ = yield from _chat_stream(messages, thinking_enabled_override=False)
+            if not final.get("content"): yield "生成失败: 最终回答为空"
         except Exception as e:
-            return f"生成失败: {e}"
+            yield f"生成失败: {e}"
     return _stream(core, stream)
 
 
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
-    # run_agent("门刚什么时候应设置揽风绳")
-    run_agent("门刚什么时候应设置揽风绳",show_reasoning=True)
+    run_agent("独立基础的高宽比")
+    # run_agent("门刚什么时候应设置揽风绳",show_reasoning=True)

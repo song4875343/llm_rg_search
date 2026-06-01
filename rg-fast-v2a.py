@@ -362,8 +362,8 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
 # ================= 主程序 =================
 if __name__ == "__main__":
     # 非流式模式（默认）
-    # run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0)
+    run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0)
     
     # 流式模式示例
-    for chunk in run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0, stream=True):
-        print(chunk, end='', flush=True)
+    # for chunk in run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0, stream=True):
+    #     print(chunk, end='', flush=True)
