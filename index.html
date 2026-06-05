@@ -1965,8 +1965,8 @@ let streamMarkdown = "";
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filepath: refData.filename,
-                        start_line: Math.max(1, refData.line_number - 5),
-                        end_line: refData.line_number + 5
+                        start_line: Math.max(1, refData.line_number - currentContextLines),
+                        end_line: refData.line_number + currentContextLines
                     })
                 });
 
