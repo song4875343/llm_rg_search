@@ -33,6 +33,28 @@
             --shadow: rgba(0,0,0,0.08);
         }
 
+        /* Custom scrollbar for reference details */
+        .reference-detail::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .reference-detail::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .reference-detail::-webkit-scrollbar-thumb {
+            background: var(--ink-muted);
+            border-radius: 2px;
+        }
+
+        .reference-detail::-webkit-scrollbar-thumb:hover {
+            background: var(--ink-light);
+        }
+
+        .reference-detail::-webkit-scrollbar-button {
+            display: none;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -804,10 +826,11 @@
         }
 
         .reference-item.expanded .reference-detail {
-            max-height: 500px;
+            max-height: 80vh;
             margin-top: 8px;
             padding-top: 8px;
             border-top: 1px solid var(--border);
+            overflow-y: auto;
         }
 
         /* Scrollable - 移除固定高度，让内容自然增长 */
