@@ -21,7 +21,7 @@ MODEL_DICT = {
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'gemma4:31b-cloud'},
     7: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'qwen3.5:397b-cloud'},
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
-    9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-flash-2026-04-16', 'thinking': 'qwen'},
+    9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-35b-a3b', 'thinking': 'qwen'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10
@@ -260,13 +260,24 @@ EXTRACT_REFERENCES_SCHEMA = [
 
 def extract_references(messages, final_answer):
     """调用大模型提取回答依据"""
-    kw = build_chat_kwargs([
-        {"role": "system", "content": "从对话历史中提取回答依据的文件名、行号和条目号（如'第3.2.1条'，无则留空）。调用output_references函数输出。"},
-        {"role": "user", "content": f"对话历史:\n{json.dumps(messages[-10:], ensure_ascii=False)}\n\n最终回答:\n{final_answer}\n\n提取依据:"}
-    ], tools=EXTRACT_REFERENCES_SCHEMA, stream=False)
-    resp = get_client().chat.completions.create(**kw)
-    if resp.choices and (tc := resp.choices[0].message.tool_calls):
-        return json.loads(tc[0].function.arguments)
+    try:
+        kw = build_chat_kwargs([
+            {"role": "system", "content": "你是一个JSON提取专家。从对话历史中提取回答依据：文件名、行号、条目号（如'第3.2.1条'，无则为空字符串）。只调用output_references函数，不要输出其他内容。"},
+            {"role": "user", "content": f"对话历史:\n{json.dumps(messages[-10:], ensure_ascii=False)}\n\n最终回答:\n{final_answer}\n\n请提取依据并调用output_references函数。"}
+        ], tools=EXTRACT_REFERENCES_SCHEMA, stream=False)
+        resp = get_client().chat.completions.create(**kw)
+        if resp.choices and (tc := resp.choices[0].message.tool_calls):
+            args_str = tc[0].function.arguments.strip()
+            # 尝试找到第一个完整的 JSON 对象
+            decoder = json.JSONDecoder()
+            obj, idx = decoder.raw_decode(args_str)
+            return obj
+    except json.JSONDecodeError as e:
+        print(f"⚠️ JSON解析失败: {e}")
+        if 'args_str' in locals():
+            print(f"   原始内容: {repr(args_str[:200])}")
+    except Exception as e:
+        print(f"⚠️ 依据提取失败: {e}")
     return None
 
 

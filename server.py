@@ -221,6 +221,30 @@ async def index_folder_endpoint(request: dict):
         return bad(str(e), 500)
 
 
+@app.post("/api/read-file-range")
+async def read_file_range_endpoint(request: dict):
+    try:
+        filepath = request.get("filepath")
+        start_line = request.get("start_line", 1)
+        end_line = request.get("end_line", 10)
+        
+        # 查找文件完整路径
+        full_path = None
+        for fname, fpath in FILE_MAP.items():
+            if filepath in fname:
+                full_path = fpath
+                break
+        
+        if not full_path:
+            return bad("文件未找到")
+        
+        # 复用现有的 read_file_range 函数
+        content = await asyncio.to_thread(read_file_range, full_path, start_line, end_line, stream=False)
+        return ok(success=True, content=content)
+    except Exception as e:
+        return bad(str(e), 500)
+
+
 # ==================== WebSocket 查询入口 ====================
 @app.websocket("/ws/query")
 async def query(ws: WebSocket):

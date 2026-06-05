@@ -753,6 +753,63 @@
             font-weight: 600;
         }
 
+        /* References */
+        .references-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 2px solid var(--border);
+        }
+
+        .references-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+            margin-bottom: 12px;
+        }
+
+        .reference-item {
+            background: var(--bg);
+            border-left: 3px solid var(--accent);
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .reference-item:hover {
+            background: var(--accent-light);
+        }
+
+        .reference-header {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .reference-index {
+            font-weight: 600;
+            color: var(--accent);
+            flex-shrink: 0;
+        }
+
+        .reference-detail {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            font-size: 12px;
+            color: var(--ink-light);
+            margin-top: 0;
+        }
+
+        .reference-item.expanded .reference-detail {
+            max-height: 500px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+
         /* Scrollable - 移除固定高度，让内容自然增长 */
         .scrollable {
             flex: 1;
@@ -819,6 +876,10 @@
                     <label><input type="radio" name="searchMode" value="agentic" onchange="onSearchModeChange()"><span>Agentic</span></label>
                     <label class="disabled" id="smSemantic"><input type="checkbox" id="cbSemantic" value="semantic" disabled><span>Semantic</span></label>
                     <label class="disabled" id="smMetadata"><input type="checkbox" id="cbMetadata" value="metadata" disabled><span>Metadata</span></label>
+                </div>
+                <div class="search-mode-label" style="margin-left: 20px;">Options</div>
+                <div class="search-mode-options">
+                    <label><input type="checkbox" id="cbExtractRefs" checked onchange="onExtractRefsChange()"><span>Extract References</span></label>
                 </div>
             </div>
         </section>
@@ -935,6 +996,7 @@
         let currentModelNum = 4;  // 默认序号4
         let currentContextLines = 10;  // 默认上下文行数
         let currentThinkingEnabled = true;
+        let currentExtractRefs = true;  // 默认开启依据提取
         let modelMeta = {};
 
         // Load settings from localStorage
@@ -944,6 +1006,7 @@
             const savedModelNum = localStorage.getItem('currentModelNum');
             const savedContextLines = localStorage.getItem('currentContextLines');
             const savedThinkingEnabled = localStorage.getItem('currentThinkingEnabled');
+            const savedExtractRefs = localStorage.getItem('currentExtractRefs');
             
             if (savedFolder) {
                 currentFolderPath = savedFolder;
@@ -964,6 +1027,10 @@
                 currentContextLines = parseInt(savedContextLines);
             }
             if (savedThinkingEnabled !== null) currentThinkingEnabled = savedThinkingEnabled !== 'false';
+            if (savedExtractRefs !== null) {
+                currentExtractRefs = savedExtractRefs !== 'false';
+                document.getElementById('cbExtractRefs').checked = currentExtractRefs;
+            }
         }
 
         // Save settings to localStorage
@@ -974,6 +1041,14 @@
             localStorage.setItem('currentModelNum', currentModelNum);
             localStorage.setItem('currentContextLines', currentContextLines);
             localStorage.setItem('currentThinkingEnabled', currentThinkingEnabled);
+            localStorage.setItem('currentExtractRefs', currentExtractRefs);
+        }
+
+        // Handle extract refs change
+        function onExtractRefsChange() {
+            currentExtractRefs = document.getElementById('cbExtractRefs').checked;
+            saveSettings();
+            console.log(`✅ 依据提取已${currentExtractRefs ? '开启' : '关闭'}`);
         }
 
         // Sync settings to backend
@@ -1495,7 +1570,7 @@ print(calc_ratio(120, 80))
 
             ws.onopen = () => {
                 updateStatusWithConfig('执行中', 'active');
-                console.log(`📤 发送查询 | 文件夹: ${currentFolderPath} | 模式: ${searchMode} | 模型序号: ${currentModelNum} | 上下文: ${currentContextLines}行`);
+                console.log(`📤 发送查询 | 文件夹: ${currentFolderPath} | 模式: ${searchMode} | 模型序号: ${currentModelNum} | 上下文: ${currentContextLines}行 | 依据提取: ${currentExtractRefs}`);
                 // 发送查询时同步所有设置（WebSocket 内部会再次同步到后端）
                 ws.send(JSON.stringify({ 
                     question: query, 
@@ -1503,7 +1578,8 @@ print(calc_ratio(120, 80))
                     folder_path: currentFolderPath,
                     model_num: currentModelNum,
                     context_lines: currentContextLines,
-                    thinking_enabled: currentThinkingEnabled
+                    thinking_enabled: currentThinkingEnabled,
+                    extract_references: currentExtractRefs
                 }));
             };
 
@@ -1553,6 +1629,9 @@ print(calc_ratio(120, 80))
                     break;
                 case 'final_answer':
                     await showFinalAnswer(msg.data);
+                    break;
+                case 'references':
+                    showReferences(msg.data);
                     break;
                 case 'error':
                     await showError(msg.data.message);
@@ -1806,6 +1885,78 @@ let streamMarkdown = "";
             resultContent.innerHTML = `<div class="result-text">${renderMarkdown(content)}</div>`;
             await updateStatusWithConfig('完成', '');
             //scrollProcessToLatest();
+        }
+
+        // Show references
+        function showReferences(data) {
+            const refs = data.references || [];
+            if (refs.length === 0) return;
+
+            const referencesHtml = `
+                <div class="references-section">
+                    <div class="references-title">📚 回答依据 (${refs.length})</div>
+                    ${refs.map((ref, i) => `
+                        <div class="reference-item" onclick="toggleReference(${i}, ${JSON.stringify(ref).replace(/"/g, '&quot;')})">
+                            <div class="reference-header">
+                                <span class="reference-index">[${i + 1}]</span>
+                                <span>${esc(ref.filename)} · 行${ref.line_number}${ref.article_number ? ` · ${esc(ref.article_number)}` : ''}</span>
+                            </div>
+                            <div class="reference-detail" id="ref-detail-${i}">
+                                <div class="loading-text">加载中...</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            resultContent.querySelector('.result-text').insertAdjacentHTML('beforeend', referencesHtml);
+            console.log('✅ 已显示依据:', refs.length, '条');
+        }
+
+        // Toggle reference detail
+        async function toggleReference(index, refData) {
+            const item = document.querySelectorAll('.reference-item')[index];
+            if (!item) return;
+
+            const detailEl = item.querySelector('.reference-detail');
+            const isExpanded = item.classList.contains('expanded');
+
+            if (isExpanded) {
+                item.classList.remove('expanded');
+                return;
+            }
+
+            // 如果已经加载过内容，直接展开
+            if (detailEl.dataset.loaded === 'true') {
+                item.classList.add('expanded');
+                return;
+            }
+
+            // 调用后端读取文件内容
+            item.classList.add('expanded');
+            detailEl.innerHTML = '<div class="loading-text">加载中...</div>';
+
+            try {
+                const response = await fetch('/api/read-file-range', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filepath: refData.filename,
+                        start_line: Math.max(1, refData.line_number - 5),
+                        end_line: refData.line_number + 5
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success && result.content) {
+                    detailEl.innerHTML = `<pre style="margin:0;white-space:pre-wrap;font-size:12px;line-height:1.4;">${esc(result.content)}</pre>`;
+                    detailEl.dataset.loaded = 'true';
+                } else {
+                    detailEl.innerHTML = '<div style="color:var(--accent);">读取失败</div>';
+                }
+            } catch (e) {
+                detailEl.innerHTML = `<div style="color:var(--accent);">错误: ${esc(e.message)}</div>`;
+            }
         }
 
         // Show error
