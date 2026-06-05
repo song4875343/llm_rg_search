@@ -21,7 +21,8 @@ MODEL_DICT = {
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'gemma4:31b-cloud'},
     7: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'qwen3.5:397b-cloud'},
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
-    9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-35b-a3b', 'thinking': 'qwen'},
+    9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-flash', 'thinking': 'qwen'},
+    10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'kimi-k2.6', 'thinking': 'qwen'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10

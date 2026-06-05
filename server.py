@@ -1,4 +1,4 @@
-import asyncio, json, re
+import asyncio, json, re, os
 from importlib import import_module
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -228,20 +228,40 @@ async def read_file_range_endpoint(request: dict):
         start_line = request.get("start_line", 1)
         end_line = request.get("end_line", 10)
         
+        # 更新 FILE_MAP 确保使用最新的文件映射
+        current_file_map = {f: str(rg_search_v6a.TARGET / f) for f in os.listdir(rg_search_v6a.TARGET) 
+                           if (rg_search_v6a.TARGET / f).is_file() and f.endswith((".txt", ".md"))}
+        
         # 查找文件完整路径
         full_path = None
-        for fname, fpath in FILE_MAP.items():
-            if filepath in fname:
-                full_path = fpath
-                break
+        
+        # 1. 先尝试直接匹配文件名
+        if filepath in current_file_map:
+            full_path = current_file_map[filepath]
+        else:
+            # 2. 尝试模糊匹配（部分匹配）
+            for fname, fpath in current_file_map.items():
+                if filepath in fname:
+                    full_path = fpath
+                    break
+        
+        # 3. 如果还找不到，尝试直接作为路径
+        if not full_path:
+            potential_path = rg_search_v6a.TARGET / filepath
+            if potential_path.exists():
+                full_path = str(potential_path)
         
         if not full_path:
-            return bad("文件未找到")
+            print(f"❌ 文件未找到: {filepath}")
+            print(f"   当前文件夹: {rg_search_v6a.TARGET}")
+            print(f"   可用文件: {list(current_file_map.keys())}")
+            return bad(f"文件未找到: {filepath}")
         
         # 复用现有的 read_file_range 函数
         content = await asyncio.to_thread(read_file_range, full_path, start_line, end_line, stream=False)
         return ok(success=True, content=content)
     except Exception as e:
+        print(f"❌ 读取文件失败: {e}")
         return bad(str(e), 500)
 
 
