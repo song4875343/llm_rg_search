@@ -254,43 +254,11 @@ TOOLS_SCHEMA = [
     {"type": "function", "function": {"name": "execute_grep", "description": "搜索关键词，返回匹配行及上下文", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}, "include_files": {"type": "string", "description": "指定要在哪些文件中搜索，填入文件名。为空则全库搜索。"}}, "required": ["pattern"]}}},
     {"type": "function", "function": {"name": "read_file_range", "description": "读取指定文件的特定行数范围", "parameters": {"type": "object", "properties": {"filepath": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["filepath", "start_line", "end_line"]}}},
 ]
-EXTRACT_REFERENCES_SCHEMA = [
-    {"type": "function", "function": {"name": "output_references", "description": "输出回答依据", "parameters": {"type": "object", "properties": {"references": {"type": "array", "items": {"type": "object", "properties": {"filename": {"type": "string"}, "line_number": {"type": "integer"}, "article_number": {"type": "string"}}, "required": ["filename", "line_number", "article_number"]}}}, "required": ["references"]}}}
-]
-
-def extract_references(messages, final_answer):
-    """调用大模型提取回答依据"""
-    kw = build_chat_kwargs([
-        {"role": "system", "content": "从对话历史中提取回答依据的文件名、行号和条目号（如'第3.2.1条'，无则留空）。调用output_references函数输出。"},
-        {"role": "user", "content": f"对话历史:\n{json.dumps(messages[-10:], ensure_ascii=False)}\n\n最终回答:\n{final_answer}\n\n提取依据:"}
-    ], tools=EXTRACT_REFERENCES_SCHEMA, stream=False)
-    resp = get_client().chat.completions.create(**kw)
-    if resp.choices and (tc := resp.choices[0].message.tool_calls):
-        return json.loads(tc[0].function.arguments)
-    return None
-
 
 # ==================== Agent 主循环 ====================
-def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=True):
+def run_agent(user_question, show_reasoning=False, stream=False):
     """主循环：多轮调用工具，直到得到最终答案或达到轮次上限。"""
     def core():
-        def output_final(msg_obj):
-            """生成并输出最终答案和依据"""
-            try:
-                final, _ = yield from _chat_stream(messages, thinking_enabled_override=False)
-                content = final.get("content") or msg_obj.get("content")
-            except Exception as e:
-                content = msg_obj.get("content") or f"API Error: {e}"
-            
-            yield content if content else "生成失败: 最终回答为空"
-            if extract_refs and content:
-                refs = extract_references(messages, content)
-                if refs:
-                    yield "\n" + "="*60 + "\n📚 [回答依据]:\n"
-                    for i, r in enumerate(refs.get("references", []), 1):
-                        yield f"  [{i}] {r['filename']} 行{r['line_number']}" + (f" {r['article_number']}" if r.get('article_number') else "")
-                    yield "\n" + "="*60
-        
         global SEARCH_RESULT_CACHE
         SEARCH_RESULT_CACHE = {}
         yield f"🚀 V7 Agent ({len(FILE_MAP)} 文件) | 问题: {user_question}"
@@ -304,7 +272,6 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 3.信息不足时继续换关键词、查目录或读原文深挖，直到获得确凿证据 """},
             {"role": "user", "content": user_question},
         ]
-        
         for turn in range(15):
             yield f"\n[第 {turn + 1} 轮]"
             try:
@@ -320,11 +287,18 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": func(**args)})
             else:
                 yield "\n✅ [最终答案] 流式输出中..."
-                yield from output_final(msg)
+                try:
+                    final, _ = yield from _chat_stream(messages, thinking_enabled_override=False)
+                    if not final.get("content") and msg.get("content"): yield msg["content"]
+                except Exception as e:
+                    yield msg.get("content") or f"API Error: {e}"
                 return
-                
         messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
-        yield from output_final({})
+        try:
+            final, _ = yield from _chat_stream(messages, thinking_enabled_override=False)
+            if not final.get("content"): yield "生成失败: 最终回答为空"
+        except Exception as e:
+            yield f"生成失败: {e}"
     return _stream(core, stream)
 
 

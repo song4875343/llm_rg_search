@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.websockets import WebSocketState
 import rg_search_v6a
-from rg_search_v6a import FILE_MAP, MODEL_DICT, SCRIPT_DIR, TOOLS_SCHEMA, execute_grep, get_client, get_document_toc, get_global_toc_summary, read_file_range, reset_search_cache, set_target_folder
+from rg_search_v6a import FILE_MAP, MODEL_DICT, SCRIPT_DIR, TOOLS_SCHEMA, EXTRACT_REFERENCES_SCHEMA, execute_grep, extract_references, get_client, get_document_toc, get_global_toc_summary, read_file_range, reset_search_cache, set_target_folder
 
 try:
     import sys
@@ -132,9 +132,17 @@ async def _chat_stream(ws: WebSocket, messages, tools=None, thinking_id=None, st
     return {"role": "assistant", "content": full_content or None, "tool_calls": [tool_calls[i] for i in sorted(tool_calls)] or None, "reasoning_content": full_reasoning or None}
 
 
-async def _stream_final_answer(ws: WebSocket, messages, thinking_id="thinking-final"):
+async def _stream_final_answer(ws: WebSocket, messages, thinking_id="thinking-final", extract_refs=True):
     final = await _chat_stream(ws, messages, thinking_id=thinking_id)
-    await _safe_send_json(ws, {"type": "final_answer", "data": {"content": final.get("content")}})
+    final_content = final.get("content")
+    await _safe_send_json(ws, {"type": "final_answer", "data": {"content": final_content}})
+    
+    if extract_refs and final_content:
+        loop = asyncio.get_event_loop()
+        refs = await loop.run_in_executor(None, extract_references, messages, final_content)
+        if refs:
+            await _safe_send_json(ws, {"type": "references", "data": refs})
+    
     await _safe_close(ws)
 
 
@@ -230,15 +238,16 @@ async def query(ws: WebSocket):
             except ValueError:
                 pass
         mode = data.get("mode", "agentic")
-        print(f"🔧 模式: {mode}, 问题: {question}")
-        await _handle_mode(ws, question, "fast" if mode == "fast" and FAST_MODE_AVAILABLE else "agentic")
+        extract_refs = data.get("extract_references", True)  # 默认开启依据提取
+        print(f"🔧 模式: {mode}, 问题: {question}, 提取依据: {extract_refs}")
+        await _handle_mode(ws, question, "fast" if mode == "fast" and FAST_MODE_AVAILABLE else "agentic", extract_refs)
     except Exception as e:
         await _safe_send_json(ws, {"type": "error", "data": {"message": str(e)}})
         await _safe_close(ws)
 
 
 # ==================== 查询主流程 ====================
-async def _handle_mode(ws: WebSocket, question: str, mode: str):
+async def _handle_mode(ws: WebSocket, question: str, mode: str, extract_refs: bool = True):
     """agentic / fast 共用一条执行管线，只在消息和工具策略上分支。"""
     print(f"\n[{mode.capitalize()}模式] 模型: {rg_search_v6a.MODEL_NAME}")
     agentic = mode == "agentic"
@@ -260,7 +269,7 @@ async def _handle_mode(ws: WebSocket, question: str, mode: str):
             messages.append(msg)
             if agentic and not msg.get("tool_calls"):
                 print("✅ [最终答案] 流式输出中...")
-                return await _stream_final_answer(ws, messages)
+                return await _stream_final_answer(ws, messages, extract_refs=extract_refs)
             tool_msgs = await _exec_tools(
                 ws,
                 msg.get("tool_calls"),
@@ -270,10 +279,10 @@ async def _handle_mode(ws: WebSocket, question: str, mode: str):
             if tool_msgs is None: return
             if not agentic:
                 print("✅ [回答]: 流式输出中...")
-                return await _stream_final_answer(ws, rg_fast.build_answer_messages(question, tool_msgs), "thinking-2")
+                return await _stream_final_answer(ws, rg_fast.build_answer_messages(question, tool_msgs), "thinking-2", extract_refs)
             messages += tool_msgs
         messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
-        await _stream_final_answer(ws, messages)
+        await _stream_final_answer(ws, messages, extract_refs=extract_refs)
     except Exception as e:
         print(f"❌ {mode.capitalize()}模式错误: {e}")
         await _safe_send_json(ws, {"type": "error", "data": {"message": f'API错误: {e}' if mode == 'agentic' else str(e)}})
