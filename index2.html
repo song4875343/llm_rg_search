@@ -510,6 +510,10 @@
             gap: 5px;
         }
 
+        .section-header.hidden {
+            visibility: hidden;
+        }
+
         /* Sections */
         .section {
             display: flex;
@@ -937,10 +941,10 @@
         </div>
 
         <!-- Main Container - Single Column -->
-        <div class="main-container">
+        <div class="main-container" id="mainContainer">
             <!-- Steps Section -->
             <section class="section" id="processSection">
-                <div class="section-header" onclick="toggleSection('processSection')">
+                <div class="section-header hidden" id="processHeader" onclick="toggleSection('processSection')">
                     <span class="section-title">执行过程</span>
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <span class="section-meta" id="stepCount">—</span>
@@ -960,7 +964,7 @@
 
             <!-- Result Section -->
             <section class="section" id="resultSection">
-                <div class="section-header">
+                <div class="section-header hidden" id="resultHeader">
                     <span class="section-title">最终回答</span>
                 </div>
                 <div class="result-content scrollable" id="resultContent">
@@ -1177,6 +1181,9 @@
         const thinkingToggle = document.getElementById('thinkingToggle');
         const thinkingToggleLabel = document.getElementById('thinkingToggleLabel');
         const processSection = document.getElementById('processSection');
+        const mainContainer = document.getElementById('mainContainer');
+        const processHeader = document.getElementById('processHeader');
+        const resultHeader = document.getElementById('resultHeader');
 
         document.title = 'fs-explorer';
 
@@ -1561,6 +1568,14 @@ print(calc_ratio(120, 80))
             await updateStatusWithConfig('执行中', 'active');
             stepCountEl.textContent = '-';
             
+            // Show section headers in demo mode
+            if (processHeader && processHeader.classList.contains('hidden')) {
+                processHeader.classList.remove('hidden');
+            }
+            if (resultHeader && resultHeader.classList.contains('hidden')) {
+                resultHeader.classList.remove('hidden');
+            }
+            
             // 清空左侧执行过程和右侧结果
             stepsList.innerHTML = '<div class="empty-state"><div class="prompt">Processing...</div><div class="hint">Loading local demo data</div></div>';
             ensureStepsFiller();
@@ -1611,6 +1626,14 @@ print(calc_ratio(120, 80))
             streamMarkdown = '';  // 清空流式缓存
             firstChunk = true;
             streamAutoFollow = false;
+
+            // Show section headers when query starts
+            if (processHeader && processHeader.classList.contains('hidden')) {
+                processHeader.classList.remove('hidden');
+            }
+            if (resultHeader && resultHeader.classList.contains('hidden')) {
+                resultHeader.classList.remove('hidden');
+            }
 
             // Ensure process section is expanded at start
             if (processSection && processSection.classList.contains('collapsed')) {
