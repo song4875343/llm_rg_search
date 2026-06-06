@@ -263,7 +263,7 @@ def extract_references(messages, final_answer):
     """调用大模型提取回答依据"""
     try:
         kw = build_chat_kwargs([
-            {"role": "system", "content": "你是一个JSON提取专家。从对话历史中提取回答依据：文件名、起始行号line_number、结束行号end_line、条目号（如'第3.2.1条'，无则为空字符串）。遇到'行2539 [RG]'时输出line_number=2539,end_line=2539；遇到'行10776-10790 [CHUNK]'时输出line_number=10776,end_line=10790。只调用output_references函数，不要输出其他内容。"},
+            {"role": "system", "content": "你是一个JSON提取专家。从对话历史中提取回答依据：文件名、起始行号line_number、结束行号end_line、条目号（如'第3.2.1条'或'(条文解释)3.2.1'，绝大部分有条目号，实在无则为空字符串）。遇到'行2539 [RG]'时输出line_number=2539,end_line=2539；遇到'行10776-10790 [CHUNK]'时输出line_number=10776,end_line=10790。只调用output_references函数，不要输出其他内容。"},
             {"role": "user", "content": f"对话历史:\n{json.dumps(messages[-10:], ensure_ascii=False)}\n\n最终回答:\n{final_answer}\n\n请提取依据并调用output_references函数。"}
         ], tools=EXTRACT_REFERENCES_SCHEMA, stream=False)
         resp = get_client().chat.completions.create(**kw)

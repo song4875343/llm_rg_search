@@ -182,6 +182,16 @@ async def index():
     return FileResponse("index.html")
 
 
+@app.get("/v2")
+async def index_v2():
+    return FileResponse("index2.html")
+
+
+@app.get("/single")
+async def index_single():
+    return FileResponse("index2.html")
+
+
 app.post("/api/set-folder")(_cfg_api("folder", "folder_path", lambda v: f"已设置文件夹: {v}", lambda _: {"file_count": len(FILE_MAP), "files": list(FILE_MAP)}))
 app.post("/api/set-model")(_cfg_api("model", "model_num", lambda v: f"已设置模型: {v['model_name']}", thinking_enabled="thinking_enabled"))
 app.get("/api/models")(_cfg_api("models"))
@@ -339,5 +349,7 @@ if __name__ == "__main__":
     print(f"📁 目标文件夹: {rg_search_v6a.TARGET}")
     print(f"📄 文档数量: {len(FILE_MAP)}")
     print(f"📏 上下文行数: {rg_search_v6a.CONTENT_LINES}")
-    print("\n🌐 服务地址: http://localhost:5000\n")
+    print("\n🌐 服务地址:")
+    print("   双栏版本: http://localhost:5000")
+    print("   单栏版本: http://localhost:5000/v2 或 http://localhost:5000/single\n")
     uvicorn.run(app, host="0.0.0.0", port=5000)

@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>规范检索助手 - V6A</title>
+    <title>规范检索助手 - V6A Single Column</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
@@ -502,27 +502,35 @@
             100% { transform: translateX(400%); width: 30%; }
         }
 
-        /* Main Grid */
-        .main-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+        /* Main Container - Single Column */
+        .main-container {
             flex: 1;
-            align-items: stretch;
-        }
-
-        @media (max-width: 1000px) {
-            .main-grid {
-                grid-template-columns: 1fr;
-            }
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
 
         /* Sections */
         .section {
             display: flex;
             flex-direction: column;
-            min-height: 500px;
-            height: 100%;
+            min-height: auto;
+            height: auto;
+            transition: all 0.3s ease;
+        }
+
+        .section.collapsed {
+            min-height: auto;
+        }
+
+        .section.collapsed .scrollable {
+            max-height: 0;
+            overflow: hidden;
+            margin-bottom: 0;
+        }
+
+        .scrollable {
+            transition: max-height 0.3s ease, margin-bottom 0.3s ease;
         }
 
         .section-header {
@@ -533,6 +541,22 @@
             padding-bottom: 1px;
             margin-bottom: 20px;
             flex-shrink: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .section-header:hover {
+            background: var(--bg-alt);
+        }
+
+        .section-toggle {
+            font-size: 14px;
+            color: var(--ink-muted);
+            transition: transform 0.2s;
+        }
+
+        .section.collapsed .section-toggle {
+            transform: rotate(-90deg);
         }
 
         .section-title {
@@ -865,7 +889,7 @@
         <header class="masthead">
             <div class="title-block">
                 <h1 class="site-title">Fs-AgentSearch</h1>
-                <span class="version">v6a</span>
+                <span class="version">v6a-single</span>
             </div>
             <div class="status-indicator">
                 <div class="status-dot" id="statusDot"></div>
@@ -912,13 +936,16 @@
             <div class="progress-fill"></div>
         </div>
 
-        <!-- Main Grid -->
-        <div class="main-grid">
-            <!-- Steps -->
-            <section class="section">
-                <div class="section-header">
+        <!-- Main Container - Single Column -->
+        <div class="main-container">
+            <!-- Steps Section -->
+            <section class="section" id="processSection">
+                <div class="section-header" onclick="toggleSection('processSection')">
                     <span class="section-title">执行过程</span>
-                    <span class="section-meta" id="stepCount">—</span>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="section-meta" id="stepCount">—</span>
+                        <span class="section-toggle">▼</span>
+                    </div>
                 </div>
                 <div class="scrollable">
                     <div class="steps-list" id="stepsList">
@@ -931,8 +958,8 @@
                 </div>
             </section>
 
-            <!-- Result -->
-            <section class="section">
+            <!-- Result Section -->
+            <section class="section" id="resultSection">
                 <div class="section-header">
                     <span class="section-title">最终回答</span>
                 </div>
@@ -1149,8 +1176,17 @@
         const modelList = document.getElementById('modelList');
         const thinkingToggle = document.getElementById('thinkingToggle');
         const thinkingToggleLabel = document.getElementById('thinkingToggleLabel');
+        const processSection = document.getElementById('processSection');
 
         document.title = 'fs-explorer';
+
+        // Toggle section collapse/expand
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            if (section) {
+                section.classList.toggle('collapsed');
+            }
+        }
 
         // Load settings on page load and sync to backend
         initializeApp();
@@ -1576,6 +1612,11 @@ print(calc_ratio(120, 80))
             firstChunk = true;
             streamAutoFollow = false;
 
+            // Ensure process section is expanded at start
+            if (processSection && processSection.classList.contains('collapsed')) {
+                processSection.classList.remove('collapsed');
+            }
+
             // 清空左侧执行过程和右侧结果
             stepsList.innerHTML = '<div class="empty-state"><div class="prompt"></div><div class="hint"></div></div>';
             ensureStepsFiller();
@@ -1907,6 +1948,11 @@ let streamMarkdown = "";
             const content = streamMarkdown || data.content;
             resultContent.innerHTML = `<div class="result-text">${renderMarkdown(content)}</div>`;
             await updateStatusWithConfig('完成', '');
+            
+            // Auto-collapse process section when final answer is shown
+            if (processSection && !processSection.classList.contains('collapsed')) {
+                processSection.classList.add('collapsed');
+            }
             //scrollProcessToLatest();
         }
 
@@ -2303,49 +2349,8 @@ let streamMarkdown = "";
             originalUpdateToolResult(data);
         };
 
-        // 同步左右两侧高度
-        function syncSectionHeights() {
-            const sections = document.querySelectorAll('.section');
-            if (sections.length !== 2) return;
-            
-            const leftSection = sections[0];
-            const rightSection = sections[1];
-            
-            // 重置高度
-            leftSection.style.minHeight = '';
-            rightSection.style.minHeight = '';
-            
-            // 获取实际高度
-            const leftHeight = leftSection.offsetHeight;
-            const rightHeight = rightSection.offsetHeight;
-            
-            // 设置为较大的高度
-            const maxHeight = Math.max(leftHeight, rightHeight);
-            leftSection.style.minHeight = maxHeight + 'px';
-            rightSection.style.minHeight = maxHeight + 'px';
-            ensureStepsFiller();
-        }
-
-        // 监听内容变化，同步高度
-        const observer = new MutationObserver(() => {
-            requestAnimationFrame(syncSectionHeights);
-        });
-
-        // 观察两个section的变化
-        document.querySelectorAll('.section').forEach(section => {
-            observer.observe(section, {
-                childList: true,
-                subtree: true,
-                characterData: true
-            });
-        });
-
-        // 窗口大小变化时也同步
+        // 窗口大小变化时刷新滚动跟随状态
         window.addEventListener('scroll', refreshStreamAutoFollow, { passive: true });
-        window.addEventListener('resize', syncSectionHeights);
-
-        // 初始同步
-        setTimeout(syncSectionHeights, 100);
 
         // Initialize
         (async () => {
@@ -2354,3 +2359,4 @@ let streamMarkdown = "";
     </script>
 </body>
 </html>
+
