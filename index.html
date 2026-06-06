@@ -1914,6 +1914,11 @@ let streamMarkdown = "";
         function showReferences(data) {
             const refs = data.references || [];
             if (refs.length === 0) return;
+            const formatReferenceLine = (ref) => {
+                const lineNumber = Number(ref.line_number);
+                const endLine = Number(ref.end_line || ref.line_number);
+                return endLine > lineNumber ? `行${lineNumber}-${endLine}` : `行${lineNumber}`;
+            };
 
             const referencesHtml = `
                 <div class="references-section">
@@ -1922,7 +1927,7 @@ let streamMarkdown = "";
                         <div class="reference-item" onclick="toggleReference(${i}, ${JSON.stringify(ref).replace(/"/g, '&quot;')})">
                             <div class="reference-header">
                                 <span class="reference-index">[${i + 1}]</span>
-                                <span>${esc(ref.filename)} · 行${ref.line_number}${ref.article_number ? ` · ${esc(ref.article_number)}` : ''}</span>
+                                <span>${esc(ref.filename)} · ${formatReferenceLine(ref)}${ref.article_number ? ` · ${esc(ref.article_number)}` : ''}</span>
                             </div>
                             <div class="reference-detail" id="ref-detail-${i}">
                                 <div class="loading-text">加载中...</div>
@@ -1960,13 +1965,16 @@ let streamMarkdown = "";
             detailEl.innerHTML = '<div class="loading-text">加载中...</div>';
 
             try {
+                const lineNumber = Number(refData.line_number);
+                const endLine = Number(refData.end_line || refData.line_number);
+                const rangeEndLine = endLine > lineNumber ? endLine : lineNumber;
                 const response = await fetch('/api/read-file-range', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filepath: refData.filename,
-                        start_line: Math.max(1, refData.line_number - currentContextLines),
-                        end_line: refData.line_number + currentContextLines
+                        start_line: Math.max(1, lineNumber - currentContextLines),
+                        end_line: rangeEndLine + currentContextLines
                     })
                 });
 

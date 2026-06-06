@@ -112,32 +112,38 @@ def chunk_file(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
     """将文件切分成 chunks（按句子边界切分）"""
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            sentences = cut_by_punctuation(f.read())
+            text = f.read()
+            sentences = [
+                (sentence, text.count('\n', 0, start_pos) + 1, start_pos, text.count('\n', 0, end_pos) + 1, end_pos)
+                for match in re.finditer(r'[^。！？.!?]+[。！？.!?]?', text)
+                if (sentence := match.group().strip())
+                for start_pos in [match.start() + len(match.group()) - len(match.group().lstrip())]
+                for end_pos in [match.end() - len(match.group()) + len(match.group().rstrip())]
+            ]
     except Exception as e:
         print(f"⚠️ 读取文件 {filepath} 失败: {e}")
         return []
     
-    chunks, current_chunk, current_length, start_pos = [], [], 0, 0
+    chunks, current_chunk, current_length = [], [], 0
     def flush_chunk():
-        nonlocal current_chunk, current_length, start_pos
-        chunk_text = ''.join(current_chunk)
-        chunks.append({'content': chunk_text, 'file': filepath, 'start_pos': start_pos, 'type': 'chunk'})
-        overlap_sents, overlap_length = [], 0
-        for s in reversed(current_chunk):
-            if overlap_length + len(s) > overlap:
+        nonlocal current_chunk, current_length
+        chunk_text = ''.join(sent for sent, _, _, _, _ in current_chunk)
+        chunks.append({'content': chunk_text, 'file': filepath, 'start_line': current_chunk[0][1], 'end_line': current_chunk[-1][3], 'start_pos': current_chunk[0][2], 'type': 'chunk'})
+        overlap_items, overlap_length = [], 0
+        for sent, start_line, start_pos, end_line, end_pos in reversed(current_chunk):
+            if overlap_length + len(sent) > overlap:
                 break
-            overlap_sents.insert(0, s)
-            overlap_length += len(s)
-        current_chunk, current_length = overlap_sents, overlap_length
-        start_pos += len(chunk_text) - overlap_length
-    for sent in sentences:
+            overlap_items.insert(0, (sent, start_line, start_pos, end_line, end_pos))
+            overlap_length += len(sent)
+        current_chunk, current_length = overlap_items, overlap_length
+    for sent, start_line, start_pos, end_line, end_pos in sentences:
         sent_len = len(sent)
         if current_length + sent_len > chunk_size and current_chunk:
             flush_chunk()
-        current_chunk.append(sent)
+        current_chunk.append((sent, start_line, start_pos, end_line, end_pos))
         current_length += sent_len
     if current_chunk:
-        chunks.append({'content': ''.join(current_chunk), 'file': filepath, 'start_pos': start_pos, 'type': 'chunk'})
+        chunks.append({'content': ''.join(sent for sent, _, _, _, _ in current_chunk), 'file': filepath, 'start_line': current_chunk[0][1], 'end_line': current_chunk[-1][3], 'start_pos': current_chunk[0][2], 'type': 'chunk'})
     return chunks
 
 def attach_bm25_scores(candidates: list, query: str) -> list:
@@ -256,7 +262,7 @@ def _format_result(item: dict, context_lines: int) -> str:
     return (
         f"--- {os.path.basename(item['file'])}:行{item['line_num']} [RG] ---\n{_extract_context(item['file'], item['line_num'], context_lines)}\n"
         if item['type'] == 'rg' else
-        f"--- {os.path.basename(item['file'])}:位置{item['start_pos']} [CHUNK] ---\n{item['content']}\n"
+        f"--- {os.path.basename(item['file'])}:行{item['start_line']}-{item['end_line']} [CHUNK] ---\n{item['content']}\n"
     )
 
 # ================= 搜索工具实现 =================

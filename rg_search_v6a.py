@@ -22,7 +22,7 @@ MODEL_DICT = {
     7: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'qwen3.5:397b-cloud'},
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
     9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-flash', 'thinking': 'qwen'},
-    10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'kimi-k2.6', 'thinking': 'qwen'},
+    10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.5-plus-2026-04-20', 'thinking': 'qwen'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10
@@ -256,14 +256,14 @@ TOOLS_SCHEMA = [
     {"type": "function", "function": {"name": "read_file_range", "description": "读取指定文件的特定行数范围", "parameters": {"type": "object", "properties": {"filepath": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["filepath", "start_line", "end_line"]}}},
 ]
 EXTRACT_REFERENCES_SCHEMA = [
-    {"type": "function", "function": {"name": "output_references", "description": "输出回答依据", "parameters": {"type": "object", "properties": {"references": {"type": "array", "items": {"type": "object", "properties": {"filename": {"type": "string"}, "line_number": {"type": "integer"}, "article_number": {"type": "string"}}, "required": ["filename", "line_number", "article_number"]}}}, "required": ["references"]}}}
+    {"type": "function", "function": {"name": "output_references", "description": "输出回答依据", "parameters": {"type": "object", "properties": {"references": {"type": "array", "items": {"type": "object", "properties": {"filename": {"type": "string"}, "line_number": {"type": "integer"}, "end_line": {"type": "integer"}, "article_number": {"type": "string"}}, "required": ["filename", "line_number", "article_number"]}}}, "required": ["references"]}}}
 ]
 
 def extract_references(messages, final_answer):
     """调用大模型提取回答依据"""
     try:
         kw = build_chat_kwargs([
-            {"role": "system", "content": "你是一个JSON提取专家。从对话历史中提取回答依据：文件名、行号、条目号（如'第3.2.1条'，无则为空字符串）。只调用output_references函数，不要输出其他内容。"},
+            {"role": "system", "content": "你是一个JSON提取专家。从对话历史中提取回答依据：文件名、起始行号line_number、结束行号end_line、条目号（如'第3.2.1条'，无则为空字符串）。遇到'行2539 [RG]'时输出line_number=2539,end_line=2539；遇到'行10776-10790 [CHUNK]'时输出line_number=10776,end_line=10790。只调用output_references函数，不要输出其他内容。"},
             {"role": "user", "content": f"对话历史:\n{json.dumps(messages[-10:], ensure_ascii=False)}\n\n最终回答:\n{final_answer}\n\n请提取依据并调用output_references函数。"}
         ], tools=EXTRACT_REFERENCES_SCHEMA, stream=False)
         resp = get_client().chat.completions.create(**kw)
