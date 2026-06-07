@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
-num=9 #选择的模型序号
+num=11 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.7'},
@@ -23,6 +23,7 @@ MODEL_DICT = {
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
     9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-flash', 'thinking': 'qwen'},
     10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.5-plus-2026-04-20', 'thinking': 'qwen'},
+    11: {'base_url': 'http://127.0.0.1:8013/v1', 'api_key': 'GEMINI_API_KEY', 'model_name': 'gemini-3.1-pro', 'thinking': 'kimi'},
 }
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10
