@@ -29,8 +29,8 @@ MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES=10
 THINKING_ENABLED = False
 print(f"🤖 当前使用模型: {MODEL_NAME} (序号: {num})")
-TARGET, INDEX_DIR = SCRIPT_DIR / "texts", SCRIPT_DIR / "texts" / ".index"
-# TARGET, INDEX_DIR = SCRIPT_DIR / "specs", SCRIPT_DIR / "specs" / ".index"
+# TARGET, INDEX_DIR = SCRIPT_DIR / "texts", SCRIPT_DIR / "texts" / ".index"
+TARGET, INDEX_DIR = SCRIPT_DIR / "specs", SCRIPT_DIR / "specs" / ".index"
 MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (SCRIPT_DIR / "rg.exe").exists() else "rg")
 FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) if (TARGET / f).is_file() and f.endswith((".txt", ".md"))} if TARGET.exists() else {}
 DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE, CLIENT = {}, {}, None
@@ -328,6 +328,7 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
             messages.append(msg)
             if msg.get("tool_calls"):
                 for tc in msg["tool_calls"]:
+                    print(tc)
                     args = json.loads(tc["function"]["arguments"])
                     func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}[tc["function"]["name"]]
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": func(**args)})
@@ -344,4 +345,4 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
     run_agent("扩展基础的高宽比")
-    # run_agent("门刚什么时候应设置揽风绳",show_reasoning=True)
+    # run_agent("门刚何时应采用揽风绳")
