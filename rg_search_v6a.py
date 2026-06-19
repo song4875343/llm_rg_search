@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
-num=11 #选择的模型序号
+num=9 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'minimaxai/minimax-m2.7'},
@@ -74,6 +74,8 @@ def _chat_stream(messages, tools=None, show_reasoning=False, thinking_enabled_ov
     kw = build_chat_kwargs(messages, stream=True, tools=tools, temperature=1, thinking_enabled_override=thinking_enabled_override)
     rs, cs, tc_map, saw_r, saw_c = [], [], {}, False, False
     for chunk in get_client().chat.completions.create(**kw):
+        if not chunk.choices:
+            continue  # 阿里云的模型在流式返回的最后一个 chunk 里，choices 是空列表 []，代码还在按 chunk.choices[0] 去取，就会直接越界产生错误。
         delta = chunk.choices[0].delta
         if r := getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None):
             rs.append(r)
