@@ -15,6 +15,13 @@ try:
 except Exception:
     FAST_MODE_AVAILABLE = False
     print("⚠️ Fast模式不可用")
+
+try:
+    import hybrid_search
+    HYBRID_MODE_AVAILABLE = True
+except Exception:
+    HYBRID_MODE_AVAILABLE = False
+    print("⚠️ Hybrid模式不可用")
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 ok = lambda data=None, **kw: JSONResponse((data or {}) | kw)
@@ -294,13 +301,127 @@ async def query(ws: WebSocket):
         mode = data.get("mode", "agentic")
         extract_refs = data.get("extract_references", True)  # 默认开启依据提取
         print(f"🔧 模式: {mode}, 问题: {question}, 提取依据: {extract_refs}")
-        await _handle_mode(ws, question, "fast" if mode == "fast" and FAST_MODE_AVAILABLE else "agentic", extract_refs)
+        
+        # 路由到对应模式
+        if mode == "hybrid" and HYBRID_MODE_AVAILABLE:
+            await _handle_hybrid(ws, question, extract_refs)
+        elif mode == "fast" and FAST_MODE_AVAILABLE:
+            await _handle_mode(ws, question, "fast", extract_refs)
+        else:
+            await _handle_mode(ws, question, "agentic", extract_refs)
     except Exception as e:
         await _safe_send_json(ws, {"type": "error", "data": {"message": str(e)}})
         await _safe_close(ws)
 
 
 # ==================== 查询主流程 ====================
+async def _handle_hybrid(ws: WebSocket, question: str, extract_refs: bool = True):
+    """混合检索模式：fast第1轮 -> 评估 -> 够:生成答案 / 不够:转agent（性能优化版）"""
+    print(f"\n[Hybrid模式] 模型: {rg_search_v6a.MODEL_NAME}")
+    
+    try:
+        # ===== 阶段1: 快速检索（只执行第1轮：工具调用） =====
+        await _safe_send_json(ws, {"type": "turn", "data": {"turn": 1}})
+        print("⚡ [Hybrid阶段1] 快速检索 - 调用搜索工具")
+        
+        messages = rg_fast.build_tool_messages(question, str(rg_search_v6a.TARGET))
+        tool_choice = {"type": "function", "function": {"name": "search_documents"}}
+        
+        msg = await _chat_stream(ws, messages, rg_fast.TOOLS, "thinking-hybrid-1", stream_content=False, tool_choice=tool_choice)
+        
+        if not msg.get("tool_calls"):
+            await _safe_send_json(ws, {"type": "final_answer", "data": {"content": "快速检索失败：无法生成搜索关键词"}})
+            return await _safe_close(ws)
+        
+        # 执行搜索工具
+        tool_msgs = await _exec_tools(
+            ws,
+            msg.get("tool_calls"),
+            lambda n, a: asyncio.to_thread(
+                rg_fast.search_documents,
+                a.get("query", question),
+                a.get("broad_keywords", []),
+                a.get("exact_keywords", []),
+                a.get("target_files", []),
+                search_dir=str(rg_search_v6a.TARGET),
+                top_k=15,
+                context_lines=rg_search_v6a.CONTENT_LINES,
+                stream=False
+            ) if n == "search_documents" else None
+        )
+        
+        if tool_msgs is None:
+            return
+        
+        fast_result_text = ''.join([m['content'] for m in tool_msgs if m.get('content')])
+        
+        # ===== 阶段2: 评估完整性 =====
+        await _safe_send_json(ws, {"type": "turn", "data": {"turn": 2}})
+        print("🤔 [Hybrid阶段2] 评估信息完整性")
+        
+        loop = asyncio.get_event_loop()
+        is_complete = await loop.run_in_executor(
+            None,
+            hybrid_search.evaluate_completeness,
+            question,
+            fast_result_text,
+            rg_fast.client,
+            rg_fast.model_name
+        )
+        
+        if is_complete:
+            # 信息足够，生成答案（这是 fast 的第2轮，性能优化版）
+            print("✅ 信息足够完整，生成最终答案")
+            return await _stream_final_answer(
+                ws,
+                rg_fast.build_answer_messages(question, tool_msgs),
+                "thinking-hybrid-final",
+                extract_refs
+            )
+        
+        # ===== 阶段3: 深度搜索（信息不足时才走到这里） =====
+        print("⚠️ 信息不足，启动深度搜索")
+        await _safe_send_json(ws, {"type": "turn", "data": {"turn": 3}})
+        
+        # 调用 agentic 模式
+        reset_search_cache()
+        messages_deep = [
+            {"role": "system", "content": f"你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。\n\n【资料库全局目录】\n{get_global_toc_summary()}\n\n【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)\n【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 "},
+            {"role": "user", "content": question},
+        ]
+        
+        for turn in range(15):
+            if not _alive(ws): return
+            await _safe_send_json(ws, {"type": "turn", "data": {"turn": 3 + turn + 1}})
+            
+            msg = await _chat_stream(ws, messages_deep, TOOLS_SCHEMA, f"thinking-hybrid-deep-{turn + 1}", stream_content=False)
+            messages_deep.append(msg)
+            
+            if not msg.get("tool_calls"):
+                print("✅ [深度搜索完成] 流式输出最终答案")
+                return await _stream_final_answer(ws, messages_deep, extract_refs=extract_refs)
+            
+            tool_msgs_deep = await _exec_tools(
+                ws,
+                msg.get("tool_calls"),
+                lambda n, a: asyncio.to_thread(_tool_funcs[n], **a, stream=False) if n in _tool_funcs else None
+            )
+            
+            if tool_msgs_deep is None: return
+            messages_deep += tool_msgs_deep
+        
+        # 达到最大轮次
+        messages_deep.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
+        await _stream_final_answer(ws, messages_deep, extract_refs=extract_refs)
+        
+    except Exception as e:
+        print(f"❌ Hybrid模式错误: {e}")
+        import traceback
+        traceback.print_exc()
+        await _safe_send_json(ws, {"type": "error", "data": {"message": f'Hybrid模式错误: {e}'}})
+        await _safe_close(ws)
+
+
 async def _handle_mode(ws: WebSocket, question: str, mode: str, extract_refs: bool = True):
     """agentic / fast 共用一条执行管线，只在消息和工具策略上分支。"""
     print(f"\n[{mode.capitalize()}模式] 模型: {rg_search_v6a.MODEL_NAME}")
