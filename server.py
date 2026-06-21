@@ -287,6 +287,154 @@ async def read_file_range_endpoint(request: dict):
         return bad(str(e), 500)
 
 
+# ==================== History Management ====================
+HISTORY_FILE = SCRIPT_DIR / "history.json"
+
+def _load_history():
+    """加载 history.json"""
+    if not HISTORY_FILE.exists():
+        return {"version": 1, "items": []}
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"⚠️ 加载历史记录失败: {e}")
+        return {"version": 1, "items": []}
+
+def _save_history(data):
+    """保存 history.json"""
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"❌ 保存历史记录失败: {e}")
+        return False
+
+def _calculate_similarity(text1: str, text2: str) -> float:
+    """计算两个文本的相似度（使用简单的字符级方法）"""
+    import difflib
+    # 归一化：小写、去空白
+    t1 = "".join(text1.lower().split())
+    t2 = "".join(text2.lower().split())
+    # 使用 SequenceMatcher 计算相似度
+    ratio = difflib.SequenceMatcher(None, t1, t2).ratio()
+    
+    # 对于中文，额外使用字符级 Jaccard 相似度作为补充
+    if any('\u4e00' <= c <= '\u9fff' for c in text1):
+        # 2-gram Jaccard
+        def get_ngrams(text, n=2):
+            return set(text[i:i+n] for i in range(len(text)-n+1))
+        g1 = get_ngrams(t1)
+        g2 = get_ngrams(t2)
+        if g1 or g2:
+            jaccard = len(g1 & g2) / len(g1 | g2) if (g1 | g2) else 0
+            # 取两者较高值
+            ratio = max(ratio, jaccard)
+    
+    return ratio
+
+@app.get("/api/history")
+async def get_history():
+    """获取所有历史记录"""
+    history = _load_history()
+    return ok(success=True, items=history.get("items", []))
+
+@app.post("/api/history")
+async def add_or_update_history(request: dict):
+    """新增或更新一条历史记录"""
+    try:
+        item = request.get("item")
+        if not item or not item.get("id"):
+            return bad("缺少必要字段")
+        
+        history = _load_history()
+        items = history.get("items", [])
+        
+        # 查找是否存在
+        existing_idx = next((i for i, x in enumerate(items) if x.get("id") == item["id"]), None)
+        
+        if existing_idx is not None:
+            # 更新
+            items[existing_idx] = item
+        else:
+            # 新增到开头
+            items.insert(0, item)
+        
+        # 限制数量（保留最近100条）
+        history["items"] = items[:100]
+        
+        if _save_history(history):
+            return ok(success=True, message="保存成功")
+        else:
+            return bad("保存失败", 500)
+    except Exception as e:
+        return bad(str(e), 500)
+
+@app.delete("/api/history/{item_id}")
+async def delete_history_item(item_id: str):
+    """删除指定历史记录"""
+    try:
+        history = _load_history()
+        items = history.get("items", [])
+        history["items"] = [x for x in items if x.get("id") != item_id]
+        
+        if _save_history(history):
+            return ok(success=True, message="删除成功")
+        else:
+            return bad("删除失败", 500)
+    except Exception as e:
+        return bad(str(e), 500)
+
+@app.delete("/api/history")
+async def clear_history():
+    """清空所有历史记录"""
+    try:
+        history = {"version": 1, "items": []}
+        if _save_history(history):
+            return ok(success=True, message="清空成功")
+        else:
+            return bad("清空失败", 500)
+    except Exception as e:
+        return bad(str(e), 500)
+
+@app.post("/api/history/match")
+async def match_history(request: dict):
+    """匹配相似历史记录"""
+    try:
+        question = request.get("question", "")
+        folder = request.get("folder", "")
+        threshold = request.get("threshold", 0.9)
+        
+        if not question:
+            return bad("问题不能为空")
+        
+        history = _load_history()
+        items = history.get("items", [])
+        
+        # 只匹配同一个文件夹的历史
+        candidates = [x for x in items if x.get("folder") == folder] if folder else items
+        
+        best_match = None
+        best_score = 0
+        
+        for item in candidates:
+            if not item.get("question"):
+                continue
+            score = _calculate_similarity(question, item["question"])
+            if score > best_score:
+                best_score = score
+                best_match = item
+        
+        if best_match and best_score >= threshold:
+            return ok(success=True, matched=True, score=round(best_score, 3), item=best_match)
+        else:
+            return ok(success=True, matched=False, score=round(best_score, 3) if best_score > 0 else 0)
+    
+    except Exception as e:
+        return bad(str(e), 500)
+
+
 # ==================== WebSocket 查询入口 ====================
 @app.websocket("/ws/query")
 async def query(ws: WebSocket):
