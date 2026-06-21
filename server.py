@@ -186,6 +186,11 @@ async def _exec_tools(ws: WebSocket, tool_calls, runner):
 # ==================== HTTP 路由 ====================
 @app.get("/")
 async def index():
+    return FileResponse("index3.html")
+
+
+@app.get("/v1")
+async def index_v1():
     return FileResponse("index.html")
 
 
@@ -471,6 +476,7 @@ if __name__ == "__main__":
     print(f"📄 文档数量: {len(FILE_MAP)}")
     print(f"📏 上下文行数: {rg_search_v6a.CONTENT_LINES}")
     print("\n🌐 服务地址:")
-    print("   双栏版本: http://localhost:5000")
-    print("   单栏版本: http://localhost:5000/v2 或 http://localhost:5000/single\n")
+    print("   默认版本: http://localhost:5000")
+    print("   v1版本: http://localhost:5000/v1")
+    print("   v2版本: http://localhost:5000/v2 或 http://localhost:5000/single\n")
     uvicorn.run(app, host="0.0.0.0", port=5000)

@@ -1,0 +1,2592 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>规范检索助手 - V6A Single Column</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']]
+            },
+            svg: {
+                fontCache: 'global'
+            }
+        };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+    <style>
+        :root {
+            --bg: #f4f1eb;
+            --bg-alt: #ebe7df;
+            --ink: #1a1a1a;
+            --ink-light: #4a4a4a;
+            --ink-muted: #8a8a8a;
+            --accent: #c45d3a;
+            --accent-light: #e8d5ce;
+            --success: #2d6a4f;
+            --border: #d4d0c8;
+            --shadow: rgba(0,0,0,0.08);
+        }
+
+        /* Custom scrollbar for reference details */
+        .reference-detail::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .reference-detail::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .reference-detail::-webkit-scrollbar-thumb {
+            background: var(--ink-muted);
+            border-radius: 2px;
+        }
+
+        .reference-detail::-webkit-scrollbar-thumb:hover {
+            background: var(--ink-light);
+        }
+
+        .reference-detail::-webkit-scrollbar-button {
+            display: none;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        ::selection {
+            background: var(--accent);
+            color: var(--bg);
+        }
+
+        body {
+            font-family: 'IBM Plex Mono', monospace;
+            background: var(--bg);
+            color: var(--ink);
+            font-size: 14px;
+            line-height: 1.6;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        .app-shell {
+            display: block;
+            min-height: 100vh;
+        }
+
+        .history-sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            z-index: 50;
+            width: 260px;
+            height: 100vh;
+            background: #eeeae2;
+            border-right: 1px solid var(--border);
+            padding: 18px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            overflow: hidden;
+        }
+
+        .history-brand {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 4px 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .history-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: 25px;
+            line-height: 1;
+        }
+
+        .history-actions {
+            display: grid;
+            gap: 8px;
+        }
+
+        .history-new,
+        .history-clear,
+        .history-toggle {
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--ink);
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .history-new {
+            border-color: var(--ink);
+            padding: 11px 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .history-clear,
+        .history-toggle {
+            padding: 7px 9px;
+            color: var(--ink-muted);
+        }
+
+        .history-toggle {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .history-new:hover,
+        .history-clear:hover,
+        .history-toggle:hover {
+            background: var(--ink);
+            border-color: var(--ink);
+            color: var(--bg);
+        }
+
+        .history-meta-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 2px 4px 0;
+            font-size: 11px;
+            color: var(--ink-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .history-list {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 2px;
+        }
+
+        .history-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .history-empty {
+            padding: 28px 8px;
+            color: var(--ink-muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .history-item {
+            width: 100%;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--ink);
+            font-family: inherit;
+            text-align: left;
+            padding: 10px 8px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            display: grid;
+            gap: 4px;
+            transition: all 0.15s;
+        }
+
+        .history-item:hover,
+        .history-item.active {
+            background: var(--bg);
+            border-color: var(--border);
+        }
+
+        .history-item.active {
+            border-left-color: var(--accent);
+        }
+
+        .history-item-top {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .history-item-title {
+            flex: 1;
+            min-width: 0;
+            font-size: 13px;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .history-delete {
+            flex: 0 0 auto;
+            width: 22px;
+            height: 22px;
+            border: 0;
+            background: transparent;
+            color: var(--ink-muted);
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .history-delete:hover {
+            color: var(--accent);
+        }
+
+        .history-item-meta {
+            font-size: 10px;
+            color: var(--ink-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .app-shell.history-collapsed {
+            display: block;
+        }
+
+        .app-shell.history-collapsed .history-sidebar {
+            width: 0;
+            padding: 0;
+            border-right: 0;
+            background: transparent;
+            align-items: center;
+            overflow: visible;
+        }
+
+        .app-shell.history-collapsed .history-title,
+        .app-shell.history-collapsed .history-actions,
+        .app-shell.history-collapsed .history-meta-row,
+        .app-shell.history-collapsed .history-list {
+            display: none;
+        }
+
+        .app-shell.history-collapsed .history-brand {
+            border-bottom: 0;
+            padding: 0;
+        }
+
+        .app-shell.history-collapsed .history-toggle {
+            position: fixed;
+            left: 12px;
+            top: 12px;
+            width: 26px;
+            height: 26px;
+            background: var(--bg);
+            border-color: var(--border);
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+
+        .page {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 40px 20px 40px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .masthead {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: none;
+            padding-bottom: 8px;
+            margin-bottom: 0px;
+        }
+
+        .title-block {
+            display: flex;
+            align-items: baseline;
+            gap: 16px;
+        }
+
+        .site-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: 42px;
+            font-weight: 400;
+            letter-spacing: -1px;
+        }
+
+        .version {
+            font-size: 11px;
+            color: var(--ink-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--ink-muted);
+        }
+
+        .status-dot.active {
+            background: var(--success);
+        }
+
+        .status-dot.error {
+            background: var(--accent);
+        }
+
+        /* Query Section */
+        .query-section {
+            margin-bottom: 20px;
+        }
+
+        .query-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+            margin-bottom: 12px;
+        }
+
+        .query-row {
+            display: flex;
+            gap: 0;
+        }
+
+        .query-input {
+            flex: 1;
+            background: var(--bg);
+            border: 2px solid var(--ink);
+            border-right: none;
+            padding: 16px 20px;
+            font-family: inherit;
+            font-size: 16px;
+            color: var(--ink);
+        }
+
+        .query-input:focus {
+            outline: none;
+            background: #fff;
+        }
+
+        .query-input::placeholder {
+            color: var(--ink-muted);
+            font-style: italic;
+        }
+
+        .query-btn {
+            background: var(--ink);
+            color: var(--bg);
+            border: 2px solid var(--ink);
+            padding: 16px 32px;
+            font-family: inherit;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .query-btn:hover:not(:disabled) {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .query-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .folder-btn {
+            background: transparent;
+            border: 1px solid var(--ink);
+            padding: 6px 16px;
+            font-family: inherit;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .folder-btn:hover {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        /* Folder Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(244, 241, 235, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--bg);
+            border: 2px solid var(--ink);
+            padding: 40px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 8px 8px 0 var(--ink);
+        }
+
+        .modal-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .folder-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .folder-nav-btn {
+            background: transparent;
+            border: 1px solid var(--ink);
+            padding: 6px 12px;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .folder-nav-btn:hover:not(:disabled) {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        .folder-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .folder-current {
+            font-size: 12px;
+            color: var(--ink-light);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .folder-list {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            padding: 8px;
+            max-height: 300px;
+            margin-bottom: 20px;
+            overflow-y: auto;
+        }
+
+        .folder-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.1s;
+        }
+
+        .folder-item:last-child {
+            border-bottom: none;
+        }
+
+        .folder-item:hover {
+            background: var(--bg);
+        }
+
+        .folder-item.selected {
+            background: var(--accent-light);
+            font-weight: 600;
+        }
+
+        .folder-icon {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .folder-name {
+            font-size: 13px;
+        }
+
+        .folder-empty {
+            padding: 20px;
+            text-align: center;
+            color: var(--ink-muted);
+            font-style: italic;
+        }
+
+        .folder-info {
+            font-size: 11px;
+            color: var(--ink-muted);
+            margin-top: 4px;
+            text-align: center;
+        }
+
+        .folder-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .folder-actions .modal-btn {
+            flex: 1;
+        }
+
+        .modal-btn {
+            background: var(--ink);
+            color: var(--bg);
+            border: none;
+            padding: 12px 24px;
+            font-family: inherit;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .modal-btn:hover {
+            background: var(--accent);
+        }
+
+        .modal-btn.secondary {
+            background: transparent;
+            border: 2px solid var(--ink);
+            color: var(--ink);
+        }
+
+        .modal-btn.secondary:hover {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        .panel-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .indexing-summary {
+            font-size: 13px;
+        }
+
+        .indexing-summary dl {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 6px 16px;
+        }
+
+        .indexing-summary dt {
+            color: var(--ink-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .indexing-summary dd {
+            font-weight: 600;
+        }
+
+        .search-mode-section {
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .search-mode-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+            white-space: nowrap;
+        }
+
+        .search-mode-options {
+            display: flex;
+            gap: 0;
+            border: 1px solid var(--border);
+        }
+
+        .search-mode-options label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 7px 14px;
+            font-size: 12px;
+            color: var(--ink-light);
+            cursor: pointer;
+            border-right: 1px solid var(--border);
+            transition: all 0.15s;
+            user-select: none;
+        }
+
+        .search-mode-options label:last-child {
+            border-right: none;
+        }
+
+        .search-mode-options label:has(input:checked) {
+            background: var(--ink);
+            color: var(--bg);
+        }
+
+        .search-mode-options label.disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .search-mode-options label.disabled input {
+            pointer-events: none;
+        }
+
+        .search-mode-options input[type="checkbox"],
+        .search-mode-options input[type="radio"] {
+            display: none;
+        }
+
+        /* Progress */
+        .progress-bar {
+            height: 3px;
+            background: var(--border);
+            margin-top: 0px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .progress-bar.active .progress-fill {
+            /* animation: indeterminate 1.5s infinite; */
+        }
+
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); width: 30%; }
+            50% { width: 50%; }
+            100% { transform: translateX(400%); width: 30%; }
+        }
+
+        /* Main Container - Single Column */
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .section-header.hidden {
+            visibility: hidden;
+        }
+
+        /* Sections */
+        .section {
+            display: flex;
+            flex-direction: column;
+            min-height: auto;
+            height: auto;
+            transition: all 0.3s ease;
+        }
+
+        .section.collapsed {
+            min-height: auto;
+        }
+
+        .section.collapsed .scrollable {
+            max-height: 0;
+            overflow: hidden;
+            margin-bottom: 0;
+        }
+
+        .scrollable {
+            transition: max-height 0.3s ease, margin-bottom 0.3s ease;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1px;
+            margin-bottom: 5px;
+            flex-shrink: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .section-header:hover {
+            background: var(--bg-alt);
+        }
+
+        .section-toggle {
+            font-size: 14px;
+            color: var(--ink-muted);
+            transition: transform 0.2s;
+        }
+
+        .section.collapsed .section-toggle {
+            transform: rotate(-90deg);
+        }
+
+        .section-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+        }
+
+        .section-meta {
+            font-size: 11px;
+            color: var(--ink-muted);
+        }
+
+        /* Steps */
+        .steps-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-height: 100%;
+            flex: 1;
+        }
+
+        .step {
+            background: var(--bg-alt);
+            border-left: 3px solid var(--ink-muted);
+            border-top: 3px solid transparent;
+            padding: 10px 14px;
+            animation: appear 0.2s ease;
+        }
+
+        @keyframes appear {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .step.toc { border-left-color: #0969da; }
+        .step.grep { border-left-color: var(--accent); }
+        .step.read { border-left-color: var(--success); }
+        .step.thinking { border-left-color: #8250df; }
+        .step.turn-step { border-top-color: var(--success); }
+
+        /* 呼吸式动画 */
+        @keyframes breathe {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .step.turn-step.active {
+            animation: breathe 2s ease-in-out infinite;
+        }
+
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 4px;
+        }
+
+        .step-id {
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .step-tool {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--ink-light);
+        }
+
+        .step-content {
+            font-size: 12px;
+            color: var(--ink-light);
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .step-summary {
+            font-size: 12px;
+            color: var(--ink-muted);
+            font-style: italic;
+            margin-top: 5px;
+        }
+
+        .steps-filler {
+            flex: 1 1 auto;
+            min-height: 0;
+            background: var(--bg-alt);
+            border-left: 3px solid transparent;
+            border-top: 3px solid transparent;
+        }
+
+        .empty-state + .steps-filler {
+            display: none;
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            flex: 1;
+            color: var(--ink-muted);
+            text-align: center;
+        }
+
+        .empty-state .prompt {
+            font-family: 'Instrument Serif', serif;
+            font-size: 24px;
+            font-style: italic;
+            margin-bottom: 8px;
+            color: var(--ink-light);
+        }
+
+        .empty-state .hint {
+            font-size: 12px;
+        }
+
+        /* Result */
+        .result-content {
+            line-height: 1.8;
+            padding: 20px;
+            background: var(--bg);
+            height: 100%;
+        }
+
+        .result-content.has-final-result {
+            background: var(--bg-alt);
+        }
+
+        .result-text {
+            font-size: 14px;
+            white-space: normal;
+        }
+
+        .result-text > *:first-child {
+            margin-top: 0;
+        }
+
+        .result-text > *:last-child {
+            margin-bottom: 0;
+        }
+
+        .result-text h1,
+        .result-text h2,
+        .result-text h3,
+        .result-text h4,
+        .result-text h5,
+        .result-text h6 {
+            font-family: 'Instrument Serif', serif;
+            font-weight: 400;
+            line-height: 1.2;
+            margin: 1em 0 0.45em;
+        }
+
+        .result-text h1 { font-size: 22px; }
+        .result-text h2 { font-size: 18px; }
+        .result-text h3 { font-size: 16px; }
+        .result-text h4 { font-size: 14px; }
+
+        .result-text p,
+        .result-text ul,
+        .result-text ol,
+        .result-text blockquote,
+        .result-text pre,
+        .result-text table {
+            margin: 0 0 1em;
+        }
+
+        .result-text ul,
+        .result-text ol {
+            padding-left: 1.4em;
+        }
+
+        .result-text li + li {
+            margin-top: 0.3em;
+        }
+
+        .result-text code {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            background: var(--accent-light);
+            padding: 0.1em 0.35em;
+            border-radius: 3px;
+        }
+
+        .result-text pre {
+            background: rgba(0,0,0,0.04);
+            padding: 14px 16px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+
+        .result-text pre code {
+            background: none;
+            padding: 0;
+            border-radius: 0;
+            font-size: 13px;
+        }
+
+        .result-text blockquote {
+            border-left: 3px solid var(--border);
+            padding-left: 14px;
+            color: var(--ink-light);
+        }
+
+        .result-text a {
+            color: var(--accent);
+            text-decoration: none;
+            border-bottom: 1px solid currentColor;
+        }
+
+        .result-text hr {
+            border: 0;
+            border-top: 1px solid var(--border);
+            margin: 1.2em 0;
+        }
+
+        .result-text table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .result-text th,
+        .result-text td {
+            border: 1px solid var(--border);
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .result-text th {
+            background: rgba(0,0,0,0.04);
+            font-weight: 600;
+        }
+
+        /* References */
+        .references-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 2px solid var(--border);
+        }
+
+        .references-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--ink-muted);
+            margin-bottom: 12px;
+        }
+
+        .reference-item {
+            background: var(--bg);
+            border-left: 3px solid var(--accent);
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .reference-item:hover {
+            background: var(--accent-light);
+        }
+
+        .reference-header {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .reference-index {
+            font-weight: 600;
+            color: var(--accent);
+            flex-shrink: 0;
+        }
+
+        .reference-detail {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            font-size: 12px;
+            color: var(--ink-light);
+            margin-top: 0;
+        }
+
+        .reference-item.expanded .reference-detail {
+            max-height: 80vh;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+            overflow-y: auto;
+        }
+
+        /* Scrollable - 移除固定高度，让内容自然增长 */
+        .scrollable {
+            flex: 1;
+            overflow-y: visible;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 30px;
+            padding-top: 5px;
+            border-top: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--ink-muted);
+            text-align: center;
+        }
+
+        /* Loading */
+        .loading-text {
+            font-style: italic;
+            color: var(--ink-muted);
+            animation: breathe 2s ease-in-out infinite;
+        }
+
+        @media (max-width: 900px) {
+            .history-sidebar {
+                width: 240px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+    <aside class="history-sidebar" aria-label="历史记录">
+        <div class="history-brand">
+            <div class="history-title">History</div>
+            <button class="history-toggle" type="button" onclick="toggleHistorySidebar()" title="收起历史">☰</button>
+        </div>
+        <div class="history-actions">
+            <button class="history-new" type="button" onclick="startNewConversation()">+ 新对话</button>
+        </div>
+        <div class="history-meta-row">
+            <span>最近记录</span>
+            <button class="history-clear" type="button" onclick="clearHistory()">清空</button>
+        </div>
+        <div class="history-list" id="historyList">
+            <div class="history-empty">暂无历史。完成一次查询后会自动保存到这里。</div>
+        </div>
+    </aside>
+    <div class="page">
+        <!-- Masthead -->
+        <header class="masthead">
+            <div class="title-block">
+                <h1 class="site-title">Fs-AgentSearch</h1>
+                <span class="version">v6a-single</span>
+            </div>
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Ready</span>
+            </div>
+        </header>
+
+        <!-- (Folder selector removed — Browse/Index moved next to Execute for a simpler UI) -->
+
+        <!-- Query -->
+        <section class="query-section">
+            <div class="query-label">Query</div>
+            <div class="query-row">
+                <input
+                    type="text"
+                    class="query-input"
+                    id="queryInput"
+                    placeholder="扩展基础的宽高比"
+                    autocomplete="off"
+                >
+                <button class="query-btn" id="queryBtn" onclick="startQuery()">
+                    Execute
+                </button>
+                <button class="folder-btn" id="browseBtn" onclick="openFolderPicker()">Browse</button>
+                <button class="folder-btn" id="indexBtn" onclick="openIndexingModal()">Index</button>
+            </div>
+            <div class="search-mode-section" id="searchModeSection">
+                <div class="search-mode-label">Retrieval</div>
+                <div class="search-mode-options">
+                    <label><input type="radio" name="searchMode" value="fast" checked onchange="onSearchModeChange()"><span>Fast</span></label>
+                    <label><input type="radio" name="searchMode" value="agentic" onchange="onSearchModeChange()"><span>Agentic</span></label>
+                    <label><input type="radio" name="searchMode" value="hybrid" onchange="onSearchModeChange()"><span>Hybrid</span></label>
+                </div>
+                <div class="search-mode-label" style="margin-left: 20px;">Options</div>
+                <div class="search-mode-options">
+                    <label><input type="checkbox" id="cbExtractRefs" checked onchange="onExtractRefsChange()"><span>Extract References</span></label>
+                </div>
+            </div>
+        </section>
+
+        <!-- Progress -->
+        <div class="progress-bar" id="progressBar">
+            <div class="progress-fill"></div>
+        </div>
+
+        <!-- Main Container - Single Column -->
+        <div class="main-container">
+            <!-- Steps Section -->
+            <section class="section" id="processSection">
+                <div class="section-header hidden" id="processHeader" onclick="toggleSection('processSection')">
+                    <span class="section-title">执行过程</span>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="section-meta" id="stepCount">—</span>
+                        <span class="section-toggle">▼</span>
+                    </div>
+                </div>
+                <div class="scrollable">
+                    <div class="steps-list" id="stepsList">
+                        <div class="empty-state"></div>
+                        <div class="steps-filler" id="stepsFiller" aria-hidden="true"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Result Section -->
+            <section class="section" id="resultSection">
+                <div class="section-header hidden" id="resultHeader">
+                    <span class="section-title">最终回答</span>
+                </div>
+                <div class="result-content scrollable" id="resultContent">
+                    <div class="empty-state"></div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            基于 rg_search_v6a.py · 工程规范智能检索系统 · 使用说明: Browse(选择文件夹) → Index(生成索引) → Execute(执行查询)
+        </footer>
+    </div>
+    </div>
+
+    <!-- Folder Picker Modal -->
+    <div class="modal-overlay" id="folderModal">
+        <div class="modal">
+            <div class="modal-title">Select Folder & Model</div>
+            <div class="folder-nav">
+                <button class="folder-nav-btn" id="folderUpBtn" onclick="navigateUp()">↑ Parent</button>
+                <span class="folder-current" id="folderModalPath">.</span>
+            </div>
+            <div class="folder-list" id="folderList">
+                <div class="loading-text">Loading...</div>
+            </div>
+            <div style="margin: 16px 0; padding: 12px; background: var(--bg-alt); border: 1px solid var(--border);">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-muted); margin-bottom: 8px;">Current Model</div>
+                <div style="font-size: 13px; color: var(--ink); margin-bottom: 8px;" id="currentModelDisplay">Loading...</div>
+                <button class="folder-nav-btn" onclick="openModelPicker()" style="width: 100%;">Change Model</button>
+            </div>
+            <div style="margin: 16px 0; padding: 12px; background: var(--bg-alt); border: 1px solid var(--border);">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-muted); margin-bottom: 8px;">Context Lines</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="contextLinesInput" min="0" max="50" style="flex: 1; padding: 6px; font-family: inherit; font-size: 13px; border: 1px solid var(--border);" />
+                    <button class="folder-nav-btn" onclick="updateContextLines()">Set</button>
+                </div>
+                <div style="font-size: 11px; color: var(--ink-muted); margin-top: 4px;">Range: 0-50 lines</div>
+            </div>
+            <div class="folder-actions">
+                <button class="modal-btn secondary" onclick="closeFolderPicker()">Cancel</button>
+                <button class="modal-btn" onclick="selectCurrentFolder()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Indexing Modal -->
+    <div class="modal-overlay" id="indexingModal">
+        <div class="modal">
+            <div id="indexingModalContent"></div>
+        </div>
+    </div>
+
+    <!-- Model Picker Modal -->
+    <div class="modal-overlay" id="modelModal">
+        <div class="modal">
+            <div class="modal-title">Select Model</div>
+            <div class="folder-list" id="modelList">
+                <div class="loading-text">Loading...</div>
+            </div>
+            <div style="margin: 16px 0; padding: 12px; background: var(--bg-alt); border: 1px solid var(--border);">
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);">
+                    <input type="checkbox" id="thinkingToggle" checked onchange="updateThinkingToggle()">
+                    <span id="thinkingToggleLabel">开启思考</span>
+                </label>
+            </div>
+            <div class="folder-actions">
+                <button class="modal-btn secondary" onclick="closeModelPicker()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let ws = null;
+        let stepCount = 0;
+        let isRunning = false;
+        let manualStop = false;
+        let currentFolderPath = 'texts';
+        let browsingPath = '.';
+        let currentModelNum = 4;  // 默认序号4
+        let currentContextLines = 10;  // 默认上下文行数
+        let currentThinkingEnabled = true;
+        let currentExtractRefs = true;  // 默认开启依据提取
+        let modelMeta = {};
+        const HISTORY_KEY = 'fsAgentSearchHistory';
+        const HISTORY_LIMIT = 80;
+        let historyItems = [];
+        let activeHistoryId = null;
+        let currentRunQuestion = '';
+        let currentRunMode = 'fast';
+
+        // Load settings from localStorage
+        function loadSettings() {
+            const savedFolder = localStorage.getItem('currentFolder');
+            const savedMode = localStorage.getItem('searchMode');
+            const savedModelNum = localStorage.getItem('currentModelNum');
+            const savedContextLines = localStorage.getItem('currentContextLines');
+            const savedThinkingEnabled = localStorage.getItem('currentThinkingEnabled');
+            const savedExtractRefs = localStorage.getItem('currentExtractRefs');
+            
+            if (savedFolder) {
+                currentFolderPath = savedFolder;
+            }
+            
+            if (savedMode) {
+                const modeRadio = document.querySelector(`input[name="searchMode"][value="${savedMode}"]`);
+                if (modeRadio) {
+                    modeRadio.checked = true;
+                }
+            }
+            
+            if (savedModelNum) {
+                currentModelNum = parseInt(savedModelNum);
+            }
+            
+            if (savedContextLines) {
+                currentContextLines = parseInt(savedContextLines);
+            }
+            if (savedThinkingEnabled !== null) currentThinkingEnabled = savedThinkingEnabled !== 'false';
+            if (savedExtractRefs !== null) {
+                currentExtractRefs = savedExtractRefs !== 'false';
+                document.getElementById('cbExtractRefs').checked = currentExtractRefs;
+            }
+        }
+
+        // Save settings to localStorage
+        function saveSettings() {
+            localStorage.setItem('currentFolder', currentFolderPath);
+            const selectedMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
+            localStorage.setItem('searchMode', selectedMode);
+            localStorage.setItem('currentModelNum', currentModelNum);
+            localStorage.setItem('currentContextLines', currentContextLines);
+            localStorage.setItem('currentThinkingEnabled', currentThinkingEnabled);
+            localStorage.setItem('currentExtractRefs', currentExtractRefs);
+        }
+
+        // Handle extract refs change
+        function onExtractRefsChange() {
+            currentExtractRefs = document.getElementById('cbExtractRefs').checked;
+            saveSettings();
+            console.log(`✅ 依据提取已${currentExtractRefs ? '开启' : '关闭'}`);
+        }
+
+        // Sync settings to backend
+        async function syncSettingsToBackend() {
+            try {
+                // 同步文件夹
+                const folderRes = await fetch('/api/set-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder_path: currentFolderPath })
+                });
+                const folderData = await folderRes.json();
+                if (folderData.success) {
+                    console.log(`✅ 已同步文件夹到后端: ${currentFolderPath}`);
+                }
+
+                // 同步模型
+                const modelRes = await fetch('/api/set-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_num: currentModelNum, thinking_enabled: currentThinkingEnabled })
+                });
+                const modelData = await modelRes.json();
+                if (modelData.success) {
+                    console.log(`✅ 已同步模型到后端: ${modelData.model_name} (序号${currentModelNum})`);
+                }
+
+                // 同步上下文行数
+                const contextRes = await fetch('/api/set-context-lines', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context_lines: currentContextLines })
+                });
+                const contextData = await contextRes.json();
+                if (contextData.success) {
+                    console.log(`✅ 已同步上下文行数到后端: ${currentContextLines}`);
+                }
+
+                await updateStatusWithConfig('就绪', '');
+            } catch (err) {
+                console.error('同步设置到后端失败:', err);
+                await updateStatusWithConfig('同步失败', 'error');
+            }
+        }
+
+        // Initialize on page load
+        async function initializeApp() {
+            loadSettings();
+            await syncSettingsToBackend();
+        }
+
+        // Handle search mode change
+        function onSearchModeChange() {
+            saveSettings();  // Save to localStorage
+            const selectedMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
+            console.log(`✅ 搜索模式已切换: ${selectedMode}`);
+        }
+
+        // Elements
+        const queryInput = document.getElementById('queryInput');
+        const queryBtn = document.getElementById('queryBtn');
+        const stepsList = document.getElementById('stepsList');
+        const stepCountEl = document.getElementById('stepCount');
+        const resultContent = document.getElementById('resultContent');
+        const progressBar = document.getElementById('progressBar');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const folderModal = document.getElementById('folderModal');
+        const folderList = document.getElementById('folderList');
+        const folderModalPath = document.getElementById('folderModalPath');
+        const folderUpBtn = document.getElementById('folderUpBtn');
+        const indexingModal = document.getElementById('indexingModal');
+        const indexingModalContent = document.getElementById('indexingModalContent');
+        const modelModal = document.getElementById('modelModal');
+        const modelList = document.getElementById('modelList');
+        const thinkingToggle = document.getElementById('thinkingToggle');
+        const thinkingToggleLabel = document.getElementById('thinkingToggleLabel');
+        const processSection = document.getElementById('processSection');
+        const processHeader = document.getElementById('processHeader');
+        const resultHeader = document.getElementById('resultHeader');
+        const historyList = document.getElementById('historyList');
+
+        document.title = 'fs-explorer';
+
+        // Toggle section collapse/expand
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            if (section) {
+                section.classList.toggle('collapsed');
+            }
+        }
+
+        // Load settings on page load and sync to backend
+        initializeApp();
+        loadHistory();
+        renderHistory();
+
+        function loadHistory() {
+            try {
+                const raw = localStorage.getItem(HISTORY_KEY);
+                historyItems = raw ? JSON.parse(raw) : [];
+                if (!Array.isArray(historyItems)) historyItems = [];
+            } catch (e) {
+                console.warn('历史记录读取失败:', e);
+                historyItems = [];
+            }
+        }
+
+        function saveHistory() {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(historyItems.slice(0, HISTORY_LIMIT)));
+        }
+
+        function formatHistoryTime(value) {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return '';
+            const now = new Date();
+            const sameDay = date.toDateString() === now.toDateString();
+            return sameDay
+                ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                : date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+        }
+
+        function renderHistory() {
+            if (!historyList) return;
+            if (!historyItems.length) {
+                historyList.innerHTML = '<div class="history-empty">暂无历史。完成一次查询后会自动保存到这里。</div>';
+                return;
+            }
+
+            historyList.innerHTML = historyItems.map(item => `
+                <button class="history-item ${item.id === activeHistoryId ? 'active' : ''}" type="button" onclick="loadHistoryItem('${item.id}')">
+                    <div class="history-item-top">
+                        <span class="history-item-title">${esc(item.question || '未命名查询')}</span>
+                        <span class="history-delete" role="button" title="删除" onclick="deleteHistoryItem(event, '${item.id}')">×</span>
+                    </div>
+                    <div class="history-item-meta">${formatHistoryTime(item.updatedAt || item.createdAt)} · ${esc(item.mode || 'fast')} · ${esc(item.folder || 'texts')}</div>
+                </button>
+            `).join('');
+        }
+
+        function upsertHistoryItem(item) {
+            const index = historyItems.findIndex(existing => existing.id === item.id);
+            if (index >= 0) historyItems.splice(index, 1);
+            historyItems.unshift(item);
+            historyItems = historyItems.slice(0, HISTORY_LIMIT);
+            saveHistory();
+            renderHistory();
+        }
+
+        function saveCompletedRun(answer, references = null) {
+            if (!currentRunQuestion || !answer) return;
+            const now = new Date().toISOString();
+            const existing = historyItems.find(item => item.id === activeHistoryId);
+            const item = {
+                ...(existing || {}),
+                id: activeHistoryId || `hist-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                question: currentRunQuestion,
+                answer,
+                references: references ?? existing?.references ?? [],
+                mode: currentRunMode,
+                folder: currentFolderPath,
+                modelNum: currentModelNum,
+                contextLines: currentContextLines,
+                createdAt: existing?.createdAt || now,
+                updatedAt: now
+            };
+            activeHistoryId = item.id;
+            upsertHistoryItem(item);
+        }
+
+        function loadHistoryItem(id) {
+            const item = historyItems.find(entry => entry.id === id);
+            if (!item) return;
+            if (isRunning) {
+                manualStop = true;
+                if (ws) ws.close(1000, 'history-switch');
+            }
+            activeHistoryId = item.id;
+            currentRunQuestion = item.question || '';
+            currentRunMode = item.mode || 'fast';
+            queryInput.value = currentRunQuestion;
+            const modeRadio = document.querySelector(`input[name="searchMode"][value="${currentRunMode}"]`);
+            if (modeRadio) modeRadio.checked = true;
+
+            if (processHeader && processHeader.classList.contains('hidden')) processHeader.classList.remove('hidden');
+            if (resultHeader && resultHeader.classList.contains('hidden')) resultHeader.classList.remove('hidden');
+            if (processSection && !processSection.classList.contains('collapsed')) processSection.classList.add('collapsed');
+
+            stepsList.innerHTML = '<div class="empty-state"><div class="prompt">历史记录</div><div class="hint">这是已保存的回答</div></div>';
+            ensureStepsFiller();
+            streamMarkdown = item.answer || '';
+            resultContent.innerHTML = `<div class="result-text">${renderMarkdown(streamMarkdown)}</div>`;
+            setResultPanelState(true);
+            if (item.references?.length) showReferences({ references: item.references });
+            typesetResultMath();
+            renderHistory();
+            updateStatusWithConfig('历史记录', '');
+        }
+
+        function deleteHistoryItem(event, id) {
+            event.stopPropagation();
+            historyItems = historyItems.filter(item => item.id !== id);
+            if (activeHistoryId === id) activeHistoryId = null;
+            saveHistory();
+            renderHistory();
+        }
+
+        function clearHistory() {
+            if (!historyItems.length) return;
+            if (!confirm('清空所有历史记录？')) return;
+            historyItems = [];
+            activeHistoryId = null;
+            saveHistory();
+            renderHistory();
+        }
+
+        function startNewConversation() {
+            if (isRunning) {
+                manualStop = true;
+                if (ws) ws.close(1000, 'new-conversation');
+            }
+            activeHistoryId = null;
+            currentRunQuestion = '';
+            streamMarkdown = '';
+            firstChunk = true;
+            queryInput.value = '';
+            stepsList.innerHTML = '<div class="empty-state"></div>';
+            ensureStepsFiller();
+            resultContent.innerHTML = '<div class="empty-state"></div>';
+            setResultPanelState(false);
+            if (processSection && !processSection.classList.contains('collapsed')) processSection.classList.add('collapsed');
+            renderHistory();
+            updateStatusWithConfig('就绪', '');
+            queryInput.focus();
+        }
+
+        function toggleHistorySidebar() {
+            document.querySelector('.app-shell')?.classList.toggle('history-collapsed');
+        }
+
+        // ========== Folder Picker ==========
+        async function openFolderPicker() {
+            folderModal.classList.add('active');
+            browsingPath = currentFolderPath;
+            await loadFolders(browsingPath);
+            await updateCurrentModelDisplay();
+            updateContextLinesDisplay();
+        }
+
+        function closeFolderPicker() {
+            folderModal.classList.remove('active');
+        }
+
+        async function loadFolders(path) {
+            folderList.innerHTML = '<div class="loading-text">Loading...</div>';
+            try {
+                const res = await fetch(`/api/folders?path=${encodeURIComponent(path)}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    folderList.innerHTML = `<div class="folder-empty">${esc(data.error)}</div>`;
+                    return;
+                }
+
+                browsingPath = data.current;
+                folderModalPath.textContent = data.current;
+                folderUpBtn.disabled = !data.parent;
+
+                if (data.folders.length === 0) {
+                    folderList.innerHTML = `
+                        <div class="folder-empty">No subfolders</div>
+                        <div class="folder-info">${data.files_count} file(s) in this folder</div>
+                    `;
+                } else {
+                    folderList.innerHTML = data.folders.map(name => `
+                        <div class="folder-item" onclick="navigateToFolder('${esc(name)}')">
+                            <span class="folder-icon">▸</span>
+                            <span class="folder-name">${esc(name)}</span>
+                        </div>
+                    `).join('');
+                    folderList.innerHTML += `<div class="folder-info">${data.files_count} file(s) in this folder</div>`;
+                }
+            } catch (e) {
+                folderList.innerHTML = `<div class="folder-empty">Error: ${esc(e.message)}</div>`;
+            }
+        }
+
+        async function navigateToFolder(name) {
+            const newPath = browsingPath === '.' ? name : `${browsingPath}/${name}`;
+            await loadFolders(newPath);
+        }
+
+        async function navigateUp() {
+            const res = await fetch(`/api/folders?path=${encodeURIComponent(browsingPath)}`);
+            const data = await res.json();
+            if (data.parent) {
+                await loadFolders(data.parent);
+            }
+        }
+
+        function selectCurrentFolder() {
+            currentFolderPath = browsingPath;
+            saveSettings();  // Save to localStorage
+            closeFolderPicker();
+            
+            // 同步到后端
+            fetch('/api/set-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder_path: currentFolderPath })
+            }).then(res => res.json()).then(data => {
+                if (data.success) {
+                    console.log(`✅ 已切换到文件夹: ${currentFolderPath}`);
+                    updateStatusWithConfig('已更新', '');
+                }
+            }).catch(err => {
+                console.error('切换文件夹失败:', err);
+            });
+        }
+
+        async function updateCurrentModelDisplay() {
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                if (data.success) {
+                const currentModel = data.models.find(m => m.id === currentModelNum);
+                if (currentModel) {
+                    document.getElementById('currentModelDisplay').textContent = `${currentModel.model_name}${currentModel.supported ? ` | 思考:${currentThinkingEnabled ? '开' : '关'}` : ' | 不支持思考开关'}`;
+                }
+                }
+            } catch (e) {
+                console.error('获取模型信息失败:', e);
+            }
+        }
+
+        function updateContextLinesDisplay() {
+            document.getElementById('contextLinesInput').value = currentContextLines;
+        }
+
+        async function updateContextLines() {
+            const input = document.getElementById('contextLinesInput');
+            const value = parseInt(input.value);
+            
+            if (isNaN(value) || value < 0 || value > 50) {
+                alert('上下文行数必须在 0-50 之间');
+                input.value = currentContextLines;
+                return;
+            }
+            
+            currentContextLines = value;
+            saveSettings();  // Save to localStorage
+            
+            // 同步到后端
+            try {
+                const res = await fetch('/api/set-context-lines', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context_lines: currentContextLines })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    console.log(`✅ 已设置上下文行数: ${currentContextLines}`);
+                    await updateStatusWithConfig('已更新', '');
+                }
+            } catch (err) {
+                console.error('设置上下文行数失败:', err);
+            }
+        }
+
+        // ========== Model Picker ==========
+        async function openModelPicker() {
+            modelModal.classList.add('active');
+            await loadModels();
+        }
+
+        function closeModelPicker() {
+            modelModal.classList.remove('active');
+        }
+
+        async function loadModels() {
+            modelList.innerHTML = '<div class="loading-text">Loading...</div>';
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+
+                if (!data.success || !data.models) {
+                    modelList.innerHTML = '<div class="folder-empty">无法加载模型列表</div>';
+                    return;
+                }
+
+                modelMeta = Object.fromEntries(data.models.map(model => [model.id, model]));
+                if (typeof data.thinking_enabled === 'boolean') currentThinkingEnabled = data.thinking_enabled;
+                modelList.innerHTML = data.models.map(model => `
+                    <div class="folder-item ${model.id === currentModelNum ? 'selected' : ''}" onclick="selectModel(${model.id}, '${esc(model.model_name)}')">
+                        <span class="folder-icon">${model.id === currentModelNum ? '✓' : '○'}</span>
+                        <span class="folder-name">${esc(model.name)}</span>
+                    </div>
+                `).join('');
+                refreshThinkingToggle();
+            } catch (e) {
+                modelList.innerHTML = `<div class="folder-empty">Error: ${esc(e.message)}</div>`;
+            }
+        }
+
+        function refreshThinkingToggle() {
+            const m = modelMeta[currentModelNum] || {};
+            thinkingToggle.checked = m.can_disable ? currentThinkingEnabled : true;
+            thinkingToggle.disabled = !m.supported || !m.can_disable;
+            thinkingToggleLabel.textContent = !m.supported ? '当前模型不支持思考开关' : m.can_disable ? '开启思考' : '当前模型仅支持开启思考';
+        }
+
+        function updateThinkingToggle() {
+            currentThinkingEnabled = thinkingToggle.checked;
+            saveSettings();
+        }
+
+        async function selectModel(modelNum, modelName) {
+            currentModelNum = modelNum;
+            refreshThinkingToggle();
+            currentThinkingEnabled = thinkingToggle.checked;
+            saveSettings();  // Save to localStorage
+            closeModelPicker();
+            
+            // 同步到后端
+            try {
+                const res = await fetch('/api/set-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_num: modelNum, thinking_enabled: currentThinkingEnabled })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    console.log(`✅ 已切换到模型: ${modelName} (序号${modelNum})`);
+                    await updateStatusWithConfig('已更新', '');
+                    await updateCurrentModelDisplay();
+                }
+            } catch (err) {
+                console.error('切换模型失败:', err);
+            }
+        }
+
+        // ========== Indexing Modal ==========
+        function openIndexingModal() {
+            showIndexingConfigView();
+            indexingModal.classList.add('active');
+        }
+
+        function closeIndexingModal() {
+            indexingModal.classList.remove('active');
+        }
+
+        function showIndexingConfigView() {
+            indexingModalContent.innerHTML = `
+                <div class="modal-title">Index Folder</div>
+                <div style="font-size:13px;color:var(--ink-light);margin-bottom:20px;">
+                    Folder: <strong>${esc(currentFolderPath)}</strong>
+                </div>
+                <div style="font-size:12px;color:var(--ink-muted);margin-bottom:20px;">
+                    This will scan all .txt and .md files in the folder and generate index files.
+                </div>
+                <div class="folder-actions">
+                    <button class="modal-btn secondary" onclick="closeIndexingModal()">Cancel</button>
+                    <button class="modal-btn" onclick="startIndexing()">Start Indexing</button>
+                </div>
+            `;
+        }
+
+        async function startIndexing() {
+            if (isRunning) return;
+
+            isRunning = true;
+            await updateStatusWithConfig('索引中', 'active');
+            progressBar.classList.add('active');
+            queryBtn.disabled = true;
+
+            // Show progress view in modal
+            indexingModalContent.innerHTML = `
+                <div class="modal-title">Indexing in Progress</div>
+                <div style="text-align:center;padding:40px 0;">
+                    <span class="panel-spinner" style="width:24px;height:24px;border-width:3px;"></span>
+                    <div style="margin-top:16px;font-size:13px;color:var(--ink-light);">
+                        Scanning documents and building index...
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/index-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder_path: currentFolderPath }),
+                });
+                const payload = await response.json();
+                
+                if (!response.ok || !payload.success) {
+                    throw new Error(payload.message || `Indexing failed (${response.status})`);
+                }
+                
+                showIndexingSummary(payload);
+                await updateStatusWithConfig('索引完成', '');
+            } catch (e) {
+                indexingModalContent.innerHTML = `
+                    <div class="modal-title">Indexing Failed</div>
+                    <div style="color:var(--accent);margin-bottom:20px;font-size:13px;">${esc(e.message)}</div>
+                    <button class="modal-btn" onclick="closeIndexingModal()">Close</button>
+                `;
+                await updateStatusWithConfig('索引失败', 'error');
+            }
+            
+            isRunning = false;
+            queryBtn.disabled = false;
+            progressBar.classList.remove('active');
+        }
+
+        function showIndexingSummary(result) {
+            indexingModalContent.innerHTML = `
+                <div class="modal-title">Indexing Complete</div>
+                <div class="indexing-summary">
+                    <dl>
+                        <dt>Index files created</dt>
+                        <dd>${result.index_count || 0}</dd>
+                        <dt>Main index</dt>
+                        <dd>${result.has_main_index ? 'Yes' : 'No'}</dd>
+                    </dl>
+                </div>
+                <div class="folder-actions" style="margin-top:20px;">
+                    <button class="modal-btn" onclick="closeIndexingModal()">Done</button>
+                </div>
+            `;
+        }
+
+        function setResultPanelState(hasFinalResult) {
+            resultContent.classList.toggle('has-final-result', hasFinalResult);
+        }
+
+        // Enter key
+        queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !isRunning) startQuery();
+        });
+
+        // Start query
+        async function startQuery() {
+            const query = queryInput.value.trim();
+            if (isRunning) {
+                manualStop = true;
+                if (ws) ws.close(1000, 'interrupt');
+                return;
+            }
+            if (!query) return;
+
+            // 保存设置到 localStorage
+            saveSettings();
+
+            // 获取选中的搜索模式
+            const searchMode = document.querySelector('input[name="searchMode"]:checked')?.value || 'fast';
+            currentRunQuestion = query;
+            currentRunMode = searchMode;
+            activeHistoryId = null;
+
+            if (ws) { ws.close(); ws = null; }
+
+            isRunning = true;
+            manualStop = false;
+            stepCount = 0;
+            queryBtn.textContent = 'Interrupt';
+            setResultPanelState(false);
+            streamMarkdown = '';  // 清空流式缓存
+            firstChunk = true;
+            streamAutoFollow = false;
+
+            // Show section headers when query starts
+            if (processHeader && processHeader.classList.contains('hidden')) {
+                processHeader.classList.remove('hidden');
+            }
+            if (resultHeader && resultHeader.classList.contains('hidden')) {
+                resultHeader.classList.remove('hidden');
+            }
+
+            // Ensure process section is expanded at start
+            if (processSection && processSection.classList.contains('collapsed')) {
+                processSection.classList.remove('collapsed');
+            }
+
+            // 清空左侧执行过程和右侧结果
+            stepsList.innerHTML = '<div class="empty-state"><div class="prompt"></div><div class="hint"></div></div>';
+            ensureStepsFiller();
+            resultContent.innerHTML = '<div class="loading-text">等待结果...</div>';
+            progressBar.classList.add('active');
+            stepCountEl.textContent = '—';
+
+            await updateStatusWithConfig('连接中', 'active');
+
+            // 如果是file://协议，使用localhost:5000
+            const wsUrl = window.location.protocol === 'file:' 
+                ? 'ws://localhost:5000/ws/query'
+                : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/query`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                updateStatusWithConfig('执行中', 'active');
+                console.log(`📤 发送查询 | 文件夹: ${currentFolderPath} | 模式: ${searchMode} | 模型序号: ${currentModelNum} | 上下文: ${currentContextLines}行 | 依据提取: ${currentExtractRefs}`);
+                // 发送查询时同步所有设置（WebSocket 内部会再次同步到后端）
+                ws.send(JSON.stringify({ 
+                    question: query, 
+                    mode: searchMode,
+                    folder_path: currentFolderPath,
+                    model_num: currentModelNum,
+                    context_lines: currentContextLines,
+                    thinking_enabled: currentThinkingEnabled,
+                    extract_references: currentExtractRefs
+                }));
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                console.log('📩 收到消息:', msg.type, msg.data);
+                handleMessage(msg);
+            };
+            
+            ws.onerror = async () => {
+                await showError('连接失败，请确认后端服务是否运行');
+                finish();
+            };
+            
+            ws.onclose = async () => {
+                if (manualStop) await showInterrupted();
+                finish();
+            };
+        }
+
+        // Handle message
+        async function handleMessage(msg) {
+            switch (msg.type) {
+                case 'turn':
+                    addTurnStep(msg.data);
+                    break;
+                case 'tool_call':
+                    addToolStep(msg.data);
+                    break;
+                case 'tool_result':
+                    updateToolResult(msg.data);
+                    break;
+                case 'thinking_chunk':
+                    appendThinkingChunk(msg.data);
+                    break;
+                case 'thinking_complete':
+                    completeThinkingStep(msg.data);
+                    break;
+                case 'stream_chunk':
+                    appendStreamChunk(msg.data.content);
+                    break;
+                case 'final_answer':
+                    await showFinalAnswer(msg.data);
+                    break;
+                case 'references':
+                    showReferences(msg.data);
+                    break;
+                case 'error':
+                    await showError(msg.data.message);
+                    break;
+            }
+        }
+
+        function ensureStepsFiller() {
+            if (!document.getElementById('stepsFiller')) {
+                stepsList.insertAdjacentHTML('beforeend', '<div class="steps-filler" id="stepsFiller" aria-hidden="true"></div>');
+            }
+        }
+
+        function scrollProcessToLatest() {
+            requestAnimationFrame(() => {
+                window.scrollTo({
+                    top: document.documentElement.scrollHeight,
+                    behavior: 'smooth'
+                });
+            });
+        }
+
+        // Add turn step
+        function addTurnStep(data) {
+            // 移除之前所有轮次的 active 状态
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // 只在第一次时清空
+            const emptyState = stepsList.querySelector('.empty-state');
+            if (emptyState) {
+                stepsList.innerHTML = '';
+                ensureStepsFiller();
+            }
+
+            stepCount++;
+            stepCountEl.textContent = `第 ${data.turn} 轮`;
+
+            const html = `
+                <div class="step thinking turn-step active" id="turn-${data.turn}">
+                    <div class="step-header">
+                        <span class="step-id">第 ${data.turn} 轮</span>
+                        <span class="step-tool">TURN</span>
+                    </div>
+                </div>
+            `;
+            document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
+            scrollProcessToLatest();
+            console.log('✅ 添加第', data.turn, '轮');
+        }
+
+        // Add tool step
+        function addToolStep(data) {
+            // 只在第一次时清空
+            const emptyState = stepsList.querySelector('.empty-state');
+            if (emptyState) {
+                stepsList.innerHTML = '';
+                ensureStepsFiller();
+            }
+
+            const toolClass = {
+                'get_document_toc': 'toc',
+                'execute_grep': 'grep',
+                'read_file_range': 'read'
+            }[data.tool_name] || 'thinking';
+
+            const toolLabel = {
+                'get_document_toc': '📑 获取目录',
+                'execute_grep': '🔍 搜索',
+                'read_file_range': '📖 阅读'
+            }[data.tool_name] || data.tool_name;
+
+            const argsDisplay = formatToolArgs(data.tool_name, data.arguments);
+
+            const html = `
+                <div class="step ${toolClass}" id="tool-${data.tool_call_id}">
+                    <div class="step-header">
+                        <span class="step-id">${toolLabel}</span>
+                        <span class="step-tool">${data.tool_name}</span>
+                    </div>
+                    <div class="step-content">${esc(argsDisplay)}</div>
+                    <div class="step-summary">执行中...</div>
+                </div>
+            `;
+            document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
+            console.log('✅ 添加工具调用:', data.tool_name);
+            scrollProcessToLatest();
+        }
+
+        // Update tool result
+        function updateToolResult(data) {
+            const toolEl = document.getElementById(`tool-${data.tool_call_id}`);
+            if (!toolEl) return;
+
+            const summaryEl = toolEl.querySelector('.step-summary');
+            if (summaryEl) {
+                summaryEl.textContent = data.summary || '完成';
+            }
+            scrollProcessToLatest();
+        }
+
+        // Append thinking chunk (流式思考)
+        function appendThinkingChunk(data) {
+            const thinkingId = data.thinking_id;
+            let thinkingEl = document.getElementById(thinkingId);
+            
+            if (!thinkingEl) {
+                // 第一次：创建思考步骤
+                const emptyState = stepsList.querySelector('.empty-state');
+                if (emptyState) {
+                    stepsList.innerHTML = '';
+                    ensureStepsFiller();
+                }
+
+                const html = `
+                    <div class="step thinking" id="${thinkingId}">
+                        <div class="step-header">
+                            <span class="step-id">🧠 思考</span>
+                            <span class="step-tool">REASONING</span>
+                        </div>
+                        <div class="step-content"></div>
+                    </div>
+                `;
+                document.getElementById('stepsFiller').insertAdjacentHTML('beforebegin', html);
+                thinkingEl = document.getElementById(thinkingId);
+            }
+            
+            // 追加内容（不再限制长度）
+            const contentEl = thinkingEl.querySelector('.step-content');
+            if (contentEl) {
+                contentEl.textContent += data.content;
+            }
+            
+            scrollProcessToLatest();
+        }
+
+        // Complete thinking step (思考完成)
+        function completeThinkingStep(data) {
+            const thinkingEl = document.getElementById(data.thinking_id);
+            if (!thinkingEl) return;
+            
+            // 可以添加完成标记或样式
+            console.log('✅ 思考步骤完成:', data.thinking_id);
+        }
+
+        let streamMarkdown = "";
+        let firstChunk = true;
+        let streamAutoFollow = false;
+
+        function getResultStreamBottom() {
+            const resultTextEl = resultContent.querySelector('.result-text');
+            if (!resultTextEl) return null;
+            return resultTextEl.getBoundingClientRect().bottom;
+        }
+
+        function refreshStreamAutoFollow() {
+            if (!isRunning || firstChunk) return;
+            const resultBottom = getResultStreamBottom();
+            if (resultBottom === null) return;
+            streamAutoFollow = resultBottom <= window.innerHeight + 200;
+        }
+        function appendStreamChunk(content) {
+            if (firstChunk) {
+                resultContent.innerHTML = '<div class="result-text"></div>';
+                setResultPanelState(false);
+                firstChunk = false;
+                streamAutoFollow = true;
+                
+                // 强制渲染后滚动到顶部
+                requestAnimationFrame(() => window.scrollTo(0, 0));
+            }
+            
+            streamMarkdown += content;
+            resultContent.querySelector('.result-text').innerHTML = renderMarkdown(streamMarkdown);
+            
+            // 只在用户已经接近底部时才自动滚动一行
+            requestAnimationFrame(() => {
+                const resultBottom = getResultStreamBottom();
+                if (resultBottom === null || !streamAutoFollow) return;
+
+                const followThreshold = 120;
+                if (resultBottom > window.innerHeight - followThreshold) {
+                    const delta = resultBottom - window.innerHeight + followThreshold;
+                    window.scrollBy(0, Math.min(Math.max(delta, 40), 160));
+                }
+            });
+}
+             
+        // Show final answer
+        async function showFinalAnswer(data) {
+            // 移除所有呼吸动画
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            // 使用流式累积的内容，避免重复渲染
+            const content = streamMarkdown || data.content;
+            resultContent.innerHTML = `<div class="result-text">${renderMarkdown(content)}</div>`;
+            saveCompletedRun(content);
+            setResultPanelState(true);
+            typesetResultMath();
+            await updateStatusWithConfig('完成', '');
+            
+            // Auto-collapse process section when final answer is shown
+            if (processSection && !processSection.classList.contains('collapsed')) {
+                processSection.classList.add('collapsed');
+            }
+            //scrollProcessToLatest();
+        }
+
+        // Show references
+        function showReferences(data) {
+            const refs = data.references || [];
+            if (refs.length === 0) return;
+            const formatReferenceLine = (ref) => {
+                const lineNumber = Number(ref.line_number);
+                const endLine = Number(ref.end_line || ref.line_number);
+                return endLine > lineNumber ? `行${lineNumber}-${endLine}` : `行${lineNumber}`;
+            };
+
+            const referencesHtml = `
+                <div class="references-section">
+                    <div class="references-title">📚 回答依据 (${refs.length})</div>
+                    ${refs.map((ref, i) => `
+                        <div class="reference-item" onclick="toggleReference(${i}, ${JSON.stringify(ref).replace(/"/g, '&quot;')})">
+                            <div class="reference-header">
+                                <span class="reference-index">[${i + 1}]</span>
+                                <span>${esc(ref.filename)} · ${formatReferenceLine(ref)}${ref.article_number ? ` · ${esc(ref.article_number)}` : ''}</span>
+                            </div>
+                            <div class="reference-detail" id="ref-detail-${i}">
+                                <div class="loading-text">加载中...</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            resultContent.querySelector('.result-text').insertAdjacentHTML('beforeend', referencesHtml);
+            const answer = streamMarkdown || resultContent.querySelector('.result-text')?.innerText || '';
+            saveCompletedRun(answer, refs);
+            console.log('✅ 已显示依据:', refs.length, '条');
+            
+            // 自动滚动到参考依据部分
+            requestAnimationFrame(() => {
+                window.scrollTo({
+                    top: document.documentElement.scrollHeight,
+                    behavior: 'smooth'
+                });
+            });
+        }
+
+        // Toggle reference detail
+        async function toggleReference(index, refData) {
+            const item = document.querySelectorAll('.reference-item')[index];
+            if (!item) return;
+
+            const detailEl = item.querySelector('.reference-detail');
+            const isExpanded = item.classList.contains('expanded');
+
+            if (isExpanded) {
+                item.classList.remove('expanded');
+                return;
+            }
+
+            // 如果已经加载过内容，直接展开
+            if (detailEl.dataset.loaded === 'true') {
+                item.classList.add('expanded');
+                return;
+            }
+
+            // 调用后端读取文件内容
+            item.classList.add('expanded');
+            detailEl.innerHTML = '<div class="loading-text">加载中...</div>';
+
+            try {
+                const lineNumber = Number(refData.line_number);
+                const endLine = Number(refData.end_line || refData.line_number);
+                const rangeEndLine = endLine > lineNumber ? endLine : lineNumber;
+                const response = await fetch('/api/read-file-range', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filepath: refData.filename,
+                        start_line: Math.max(1, lineNumber - currentContextLines),
+                        end_line: rangeEndLine + currentContextLines
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success && result.content) {
+                    detailEl.innerHTML = `<pre style="margin:0;white-space:pre-wrap;font-size:12px;line-height:1.4;">${esc(result.content)}</pre>`;
+                    detailEl.dataset.loaded = 'true';
+                } else {
+                    detailEl.innerHTML = '<div style="color:var(--accent);">读取失败</div>';
+                }
+            } catch (e) {
+                detailEl.innerHTML = `<div style="color:var(--accent);">错误: ${esc(e.message)}</div>`;
+            }
+        }
+
+        // Show error
+        async function showError(msg) {
+            // 移除所有呼吸动画
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            resultContent.innerHTML = `<div class="empty-state"><div class="prompt">错误</div><div class="hint">${esc(msg)}</div></div>`;
+            setResultPanelState(false);
+            await updateStatusWithConfig('错误', 'error');
+            scrollProcessToLatest();
+        }
+
+        async function showInterrupted() {
+            document.querySelectorAll('.turn-step.active').forEach(el => {
+                el.classList.remove('active');
+            });
+            resultContent.innerHTML = '<div class="empty-state"><div class="prompt">已被用户中止</div><div class="hint">等待新任务</div></div>';
+            setResultPanelState(false);
+            await updateStatusWithConfig('已中断', '');
+            scrollProcessToLatest();
+        }
+
+        // Finish
+        function finish() {
+            isRunning = false;
+            queryBtn.disabled = false;
+            queryBtn.textContent = 'Execute';
+            progressBar.classList.remove('active');
+            if (ws) { ws.close(); ws = null; }
+            manualStop = false;
+        }
+
+        // Update status
+        function updateStatus(text, state) {
+            statusText.textContent = text;
+            statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+        }
+
+        // Build full status text with config info
+        async function buildFullStatus(statusText) {
+            try {
+                // 获取当前模型名称
+                let modelName = 'Unknown';
+                try {
+                    const res = await fetch('/api/models');
+                    const data = await res.json();
+                    if (data.success) {
+                        const currentModel = data.models.find(m => m.id === currentModelNum);
+                        if (currentModel) {
+                            modelName = currentModel.model_name;
+                        }
+                    }
+                } catch (e) {
+                    // 如果获取失败，使用缓存的名称
+                    modelName = `Model#${currentModelNum}`;
+                }
+                
+                return `${statusText} | ${currentFolderPath} | ${modelName} | ${currentContextLines}行`;
+            } catch (e) {
+                return statusText;
+            }
+        }
+
+        // Update status with full config info
+        async function updateStatusWithConfig(statusText, state) {
+            const fullText = await buildFullStatus(statusText);
+            updateStatus(fullText, state);
+        }
+
+        // Format tool arguments
+        function formatToolArgs(toolName, args) {
+            switch (toolName) {
+                case 'get_document_toc':
+                    return `文件名: ${args.filename}`;
+                case 'execute_grep':
+                    return `搜索词: "${args.pattern}"${args.include_files ? `\n限定文件: ${args.include_files}` : '\n范围: 全库'}`;
+                case 'read_file_range':
+                    return `文件: ${args.filepath}\n行范围: ${args.start_line} - ${args.end_line}`;
+                default:
+                    return JSON.stringify(args, null, 2);
+            }
+        }
+
+        // Escape HTML
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function protectMathSegments(text) {
+            const placeholders = [];
+            const protectedText = text.replace(/\$\$[\s\S]+?\$\$|\$(?:\\.|[^$\n])+\$/g, (match) => {
+                const key = `@@MATH${placeholders.length}@@`;
+                placeholders.push({ key, value: match });
+                return key;
+            });
+            return { protectedText, placeholders };
+        }
+
+        function restoreMathSegments(text, placeholders) {
+            let restored = text;
+            for (const item of placeholders) {
+                restored = restored.replace(item.key, item.value);
+            }
+            return restored;
+        }
+
+        function renderInlineMarkdown(text) {
+            const { protectedText, placeholders } = protectMathSegments(text);
+            let html = esc(protectedText);
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+            html = html.replace(/(^|[^*\\])_([^_\n]+)_/g, '$1<em>$2</em>');
+            html = html.replace(/\n/g, '<br>');
+            return restoreMathSegments(html, placeholders);
+        }
+
+        function isTableSeparatorLine(line) {
+            const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+            return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+        }
+
+        function splitTableRow(line) {
+            return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+        }
+
+        function renderMarkdown(md) {
+            if (!md) return '';
+
+            const lines = md.replace(/\r\n/g, '\n').split('\n');
+            const html = [];
+            let inCodeBlock = false;
+            let codeLines = [];
+            let listType = null;
+            let paragraph = [];
+
+            function flushParagraph() {
+                if (!paragraph.length) return;
+                html.push(`<p>${renderInlineMarkdown(paragraph.join('\n'))}</p>`);
+                paragraph = [];
+            }
+
+            function flushList() {
+                if (!listType) return;
+                html.push(`</${listType}>`);
+                listType = null;
+            }
+
+            function flushCodeBlock() {
+                if (!inCodeBlock) return;
+                html.push(`<pre><code>${esc(codeLines.join('\n'))}</code></pre>`);
+                inCodeBlock = false;
+                codeLines = [];
+            }
+
+            for (let i = 0; i < lines.length; i += 1) {
+                const line = lines[i];
+                if (line.trim().startsWith('```')) {
+                    flushParagraph();
+                    flushList();
+                    if (inCodeBlock) {
+                        flushCodeBlock();
+                    } else {
+                        inCodeBlock = true;
+                        codeLines = [];
+                    }
+                    continue;
+                }
+
+                if (inCodeBlock) {
+                    codeLines.push(line);
+                    continue;
+                }
+
+                const trimmed = line.trim();
+
+                if (!trimmed) {
+                    flushParagraph();
+                    flushList();
+                    continue;
+                }
+
+                const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
+                if (heading) {
+                    flushParagraph();
+                    flushList();
+                    const level = heading[1].length;
+                    html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+                    continue;
+                }
+
+                const nextLine = lines[i + 1];
+                if (trimmed.includes('|') && nextLine && isTableSeparatorLine(nextLine)) {
+                    flushParagraph();
+                    flushList();
+                    const headerCells = splitTableRow(trimmed);
+                    const bodyRows = [];
+                    let rowIndex = i + 2;
+                    while (rowIndex < lines.length) {
+                        const rowLine = lines[rowIndex].trim();
+                        if (!rowLine || !rowLine.includes('|')) break;
+                        bodyRows.push(splitTableRow(rowLine));
+                        rowIndex += 1;
+                    }
+                    html.push('<table><thead><tr>');
+                    for (const cell of headerCells) {
+                        html.push(`<th>${renderInlineMarkdown(cell)}</th>`);
+                    }
+                    html.push('</tr></thead><tbody>');
+                    for (const row of bodyRows) {
+                        html.push('<tr>');
+                        for (const cell of row) {
+                            html.push(`<td>${renderInlineMarkdown(cell)}</td>`);
+                        }
+                        html.push('</tr>');
+                    }
+                    html.push('</tbody></table>');
+                    i = rowIndex - 1;
+                    continue;
+                }
+
+                if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+                    flushParagraph();
+                    flushList();
+                    html.push('<hr>');
+                    continue;
+                }
+
+                const blockquote = trimmed.match(/^>\s?(.*)$/);
+                if (blockquote) {
+                    flushParagraph();
+                    flushList();
+                    html.push(`<blockquote>${renderInlineMarkdown(blockquote[1])}</blockquote>`);
+                    continue;
+                }
+
+                const unordered = trimmed.match(/^[-*]\s+(.*)$/);
+                if (unordered) {
+                    flushParagraph();
+                    if (listType !== 'ul') {
+                        flushList();
+                        listType = 'ul';
+                        html.push('<ul>');
+                    }
+                    html.push(`<li>${renderInlineMarkdown(unordered[1])}</li>`);
+                    continue;
+                }
+
+                const ordered = trimmed.match(/^\d+\.\s+(.*)$/);
+                if (ordered) {
+                    flushParagraph();
+                    if (listType !== 'ol') {
+                        flushList();
+                        listType = 'ol';
+                        html.push('<ol>');
+                    }
+                    html.push(`<li>${renderInlineMarkdown(ordered[1])}</li>`);
+                    continue;
+                }
+
+                flushList();
+                paragraph.push(trimmed);
+            }
+
+            flushParagraph();
+            flushList();
+            flushCodeBlock();
+            return html.join('');
+        }
+
+        function typesetResultMath() {
+            if (window.MathJax?.typesetPromise) {
+                window.MathJax.typesetPromise([resultContent]).catch((err) => {
+                    console.error('MathJax render failed:', err);
+                });
+            }
+        }
+        
+        // 窗口大小变化时刷新滚动跟随状态
+        window.addEventListener('scroll', refreshStreamAutoFollow, { passive: true });
+    </script>
+</body>
+</html>
+
