@@ -184,7 +184,8 @@ def hybrid_search(query: str, search_dir: str = "./specs", stream: bool = False)
 if __name__ == "__main__":
     # 使用示例
     # query = "独立基础的高宽比"
-    query = "独立基础的性能化设计"
+    query ='门式刚架何时采用缆风绳'
+    # query = "独立基础的性能化设计"
     # 流式输出（推荐）
     for chunk in hybrid_search(query, search_dir="./specs", stream=True):
         print(chunk, end='', flush=True)

@@ -404,7 +404,7 @@ async def match_history(request: dict):
     try:
         question = request.get("question", "")
         folder = request.get("folder", "")
-        threshold = request.get("threshold", 0.9)
+        threshold = request.get("threshold", 0.78)  # 默认阈值调整为 0.78
         
         if not question:
             return bad("问题不能为空")
@@ -508,16 +508,22 @@ async def _handle_hybrid(ws: WebSocket, question: str, extract_refs: bool = True
         
         fast_result_text = ''.join([m['content'] for m in tool_msgs if m.get('content')])
         
+        # 限制评估输入长度，与 hybrid_search.py 保持一致
+        max_eval_length = 2000
+        eval_text = fast_result_text[:max_eval_length]
+        if len(fast_result_text) > max_eval_length:
+            eval_text += "\n...(已截断)..."
+        
         # ===== 阶段2: 评估完整性 =====
         await _safe_send_json(ws, {"type": "turn", "data": {"turn": 2}})
-        print("🤔 [Hybrid阶段2] 评估信息完整性")
+        print(f"🤔 [Hybrid阶段2] 评估信息完整性 (结果长度: {len(fast_result_text)}字符, 评估: {len(eval_text)}字符)")
         
         loop = asyncio.get_event_loop()
         is_complete = await loop.run_in_executor(
             None,
             hybrid_search.evaluate_completeness,
             question,
-            fast_result_text,
+            eval_text,  # 使用截断后的文本
             rg_fast.client,
             rg_fast.model_name
         )
