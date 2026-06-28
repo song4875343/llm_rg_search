@@ -1322,6 +1322,7 @@
             const savedThinkingEnabled = localStorage.getItem('currentThinkingEnabled');
             const savedExtractRefs = localStorage.getItem('currentExtractRefs');
             const savedHistoryFirst = localStorage.getItem('currentHistoryFirst');
+            const savedHistoryCollapsed = localStorage.getItem('historyCollapsed');
             
             if (savedFolder) {
                 currentFolderPath = savedFolder;
@@ -1349,6 +1350,11 @@
             if (savedHistoryFirst !== null) {
                 currentHistoryFirst = savedHistoryFirst === 'true';
                 document.getElementById('cbHistoryFirst').checked = currentHistoryFirst;
+            }
+            
+            // 恢复历史边栏折叠状态
+            if (savedHistoryCollapsed === 'true') {
+                document.querySelector('.app-shell')?.classList.add('history-collapsed');
             }
         }
 
@@ -1690,7 +1696,12 @@
         }
 
         function toggleHistorySidebar() {
-            document.querySelector('.app-shell')?.classList.toggle('history-collapsed');
+            const appShell = document.querySelector('.app-shell');
+            appShell?.classList.toggle('history-collapsed');
+            
+            // 保存状态到 localStorage
+            const isCollapsed = appShell?.classList.contains('history-collapsed');
+            localStorage.setItem('historyCollapsed', isCollapsed ? 'true' : 'false');
         }
 
         // ========== Folder Picker ==========
