@@ -317,7 +317,11 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 {get_global_toc_summary()}
 
 【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)
-【纪律】: 1.必须调用工具查阅资料 2.必须明确引用依据 3.信息不足时继续换关键词、查目录或读原文深挖，直到获得确凿证据 """},
+【纪律】:
+1. 必须调用工具查阅资料。
+2. 必须明确引用依据（如某规范第X条）。
+3. 信息不足时继续换关键词、查目录或读原文深挖，直到获得确凿证据。
+4. 交叉验证防遗漏：必须全面收集所有相关规范中的信息，严禁“找到一处关联条款就立刻停止检索”的早退行为。"""},
             {"role": "user", "content": user_question},
         ]
         
@@ -347,5 +351,5 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
-    run_agent("扩展基础的高宽比")
+    run_agent("高烈度区能否用砌体女儿墙")
     # run_agent("门刚何时应采用揽风绳")

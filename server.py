@@ -198,12 +198,6 @@ async def index_v1():
 async def index_v2():
     return FileResponse("index2.html")
 
-
-@app.get("/single")
-async def index_single():
-    return FileResponse("index2.html")
-
-
 app.post("/api/set-folder")(_cfg_api("folder", "folder_path", lambda v: f"已设置文件夹: {v}", lambda _: {"file_count": len(FILE_MAP), "files": list(FILE_MAP)}))
 app.post("/api/set-model")(_cfg_api("model", "model_num", lambda v: f"已设置模型: {v['model_name']}", thinking_enabled="thinking_enabled"))
 app.get("/api/models")(_cfg_api("models"))
