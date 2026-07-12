@@ -1,4 +1,4 @@
-# ==================== 导入与初始化 ====================
+﻿# ==================== 导入与初始化 ====================
 import subprocess, json, os, sys
 if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
 from pathlib import Path
@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path: sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
-num=12 #选择的模型序号
+num=1 #选择的模型序号
 MODEL_DICT = {
     1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
     2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'z-ai/glm-5.2'},
@@ -202,6 +202,40 @@ def get_document_toc(filename, stream=False):
         return json.dumps({"error": f"未找到 '{filename}'"}, ensure_ascii=False)
     return _stream(core, stream)
 
+def _supplemental_grep_lines(pattern, excluded_names, limit=30, preview_chars=30):
+    """Search remaining files cheaply and return short index hints only."""
+    excluded_names = set(excluded_names or [])
+    remaining = [(name, path) for name, path in FILE_MAP.items() if name not in excluded_names]
+    if not remaining:
+        return ""
+    cmd = [RG_EXE, "-n", "-i", "-H", "-e", pattern, "-m", "12"] + [path for _, path in remaining]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+    if not res.stdout:
+        return ""
+    lines, seen = [], set()
+    for raw in res.stdout.strip().splitlines():
+        parsed = _parse_grep_line(raw)
+        if not parsed:
+            continue
+        fp, ln, content = parsed
+        key = (fp, ln)
+        if key in seen or key in SEARCH_RESULT_CACHE:
+            continue
+        seen.add(key)
+        fname = os.path.basename(fp)
+        ctx = get_chapter_context(fp, ln)
+        preview = content.strip().replace("\\t", " ")
+        preview = preview[:preview_chars] + ("..." if len(preview) > preview_chars else "")
+        lines.append(f"[L{len(lines)+1:03d}] {fname} 行{ln} {ctx}\n索引预览-->{preview}")
+        if len(lines) >= limit:
+            break
+    if not lines:
+        return ""
+    return "\n\n【补充扫描索引：其余文件也有命中。这里只保留每行前30字；如可能相关，请继续调用 execute_grep 限定文件或 read_file_range 拉取原文。】\n" + "\n".join(lines)
+
 def execute_grep(pattern, include_files=None, stream=False):
     """执行带上下文的 rg 搜索，并对结果做去重和章节注解。"""
     def core():
@@ -218,7 +252,8 @@ def execute_grep(pattern, include_files=None, stream=False):
             res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
             if not res.stdout:
                 yield f"   📊 0命中"
-                return "系统反馈：未找到匹配项"
+                supplement = _supplemental_grep_lines(pattern, [name for _, name in targets]) if include_files else ""
+                return "系统反馈：限定范围未找到匹配项" + supplement if supplement else "系统反馈：未找到匹配项"
             records, current = [], []
             for line in res.stdout.strip().split("\n"):
                 (records.append(current), current := []) if line == "--" else current.append(line)
@@ -235,7 +270,10 @@ def execute_grep(pattern, include_files=None, stream=False):
             output_lines = sum([list(r) + ["--"] for r in new_records[:20]], [])[:-1]
             annotated, debug = annotate_grep_output(chr(10).join(output_lines))
             yield from debug
-            return f"系统反馈：{len(new_records)} 条新记录:\n{annotated}"
+            supplement = _supplemental_grep_lines(pattern, [name for _, name in targets]) if include_files else ""
+            if supplement:
+                yield "      🔎 [补充扫描] 发现其余文件单行命中"
+            return f"系统反馈：{len(new_records)} 条新记录:\n{annotated}{supplement}"
         except Exception as e:
             return f"系统反馈：搜索出错 {e}"
     return _stream(core, stream)
@@ -351,5 +389,6 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
-    run_agent("高烈度区能否用砌体女儿墙")
-    # run_agent("门刚何时应采用揽风绳")
+    # run_agent("高烈度区能否用砌体女儿墙")
+    run_agent("门刚何时应采用揽风绳")
+
