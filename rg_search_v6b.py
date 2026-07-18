@@ -1,5 +1,5 @@
 ﻿# ==================== 导入与初始化 ====================
-import subprocess, json, os, sys
+import subprocess, json, os, sys, re
 if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
 from pathlib import Path
 from openai import OpenAI
@@ -34,7 +34,7 @@ print(f"🤖 当前使用模型: {MODEL_NAME} (序号: {num})")
 TARGET, INDEX_DIR = SCRIPT_DIR / "specs", SCRIPT_DIR / "specs" / ".index"
 MAIN_INDEX, RG_EXE = INDEX_DIR / "index.json", (str(SCRIPT_DIR / "rg.exe") if (SCRIPT_DIR / "rg.exe").exists() else "rg")
 FILE_MAP = {f: str(TARGET / f) for f in os.listdir(TARGET) if (TARGET / f).is_file() and f.endswith((".txt", ".md"))} if TARGET.exists() else {}
-DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE, CLIENT = {}, {}, None
+DETAIL_TOC_CACHE, SEARCH_RESULT_CACHE, SUPPLEMENT_CACHE, SUPPLEMENT_KEY_MAP, CLIENT = {}, {}, {}, {}, None
 
 def _stream(core, stream=False):
     g = core()
@@ -99,8 +99,10 @@ def _chat_stream(messages, tools=None, show_reasoning=False, thinking_enabled_ov
     return {"role": "assistant", "content": "".join(cs) or None, "tool_calls": [tc_map[i] for i in sorted(tc_map)] or None, "reasoning_content": "".join(rs) or None}, "".join(rs)
 
 def reset_search_cache():
-    global SEARCH_RESULT_CACHE
+    global SEARCH_RESULT_CACHE, SUPPLEMENT_CACHE, SUPPLEMENT_KEY_MAP
     SEARCH_RESULT_CACHE = {}
+    SUPPLEMENT_CACHE = {}
+    SUPPLEMENT_KEY_MAP = {}
 
 def set_target_folder(folder_path: str):
     global TARGET, INDEX_DIR, MAIN_INDEX, FILE_MAP
@@ -202,8 +204,32 @@ def get_document_toc(filename, stream=False):
         return json.dumps({"error": f"未找到 '{filename}'"}, ensure_ascii=False)
     return _stream(core, stream)
 
-def _supplemental_grep_lines(pattern, excluded_names, limit=30, preview_chars=30):
-    """Search remaining files cheaply and return short index hints only."""
+def _find_match_span(pattern, content):
+    try:
+        m = re.search(pattern, content, flags=re.IGNORECASE)
+        if m:
+            return m.start(), m.end()
+    except re.error:
+        pass
+    idx = content.lower().find(pattern.lower())
+    return (idx, idx + len(pattern)) if idx >= 0 else (0, 0)
+
+def _centered_preview(pattern, content, preview_chars=50):
+    text = content.strip().replace("\t", " ")
+    start, end = _find_match_span(pattern, text)
+    if end > start:
+        left = max(0, start - max(0, (preview_chars - (end - start)) // 2))
+        right = min(len(text), left + preview_chars)
+        left = max(0, right - preview_chars)
+        preview = text[left:start] + "【" + text[start:end] + "】" + text[end:right]
+    else:
+        left, right = 0, min(len(text), preview_chars)
+        preview = text[left:right]
+    return ("..." if left > 0 else "") + preview + ("..." if right < len(text) else "")
+
+def _supplemental_grep_lines(pattern, excluded_names, limit=30, preview_chars=50):
+    """Search remaining files cheaply, cache hits, and return short index hints only."""
+    global SUPPLEMENT_CACHE, SUPPLEMENT_KEY_MAP
     excluded_names = set(excluded_names or [])
     remaining = [(name, path) for name, path in FILE_MAP.items() if name not in excluded_names]
     if not remaining:
@@ -215,27 +241,31 @@ def _supplemental_grep_lines(pattern, excluded_names, limit=30, preview_chars=30
         return ""
     if not res.stdout:
         return ""
-    lines, seen = [], set()
+    lines, seen, hit_count, dup_count = [], set(), 0, 0
     for raw in res.stdout.strip().splitlines():
         parsed = _parse_grep_line(raw)
         if not parsed:
             continue
         fp, ln, content = parsed
         key = (fp, ln)
-        if key in seen or key in SEARCH_RESULT_CACHE:
+        hit_count += 1
+        if key in seen or key in SEARCH_RESULT_CACHE or key in SUPPLEMENT_KEY_MAP:
+            dup_count += 1
             continue
         seen.add(key)
         fname = os.path.basename(fp)
         ctx = get_chapter_context(fp, ln)
-        preview = content.strip().replace("\\t", " ")
-        preview = preview[:preview_chars] + ("..." if len(preview) > preview_chars else "")
-        lines.append(f"[L{len(lines)+1:03d}] {fname} 行{ln} {ctx}\n索引预览-->{preview}")
+        sid = f"S{len(SUPPLEMENT_CACHE) + 1:03d}"
+        SUPPLEMENT_KEY_MAP[key] = sid
+        SUPPLEMENT_CACHE[sid] = {"file": fp, "filename": fname, "line": ln, "content": content, "pattern": pattern}
+        preview = _centered_preview(pattern, content, preview_chars)
+        lines.append(f"补充ID={sid} | 文件={fname} | 原文行={ln} {ctx}\n索引预览-->{preview}")
         if len(lines) >= limit:
             break
+    header = f"\n\n【补充扫描索引：其余文件也有命中。补充命中: {hit_count} 条, 去重: {dup_count} 条, 新记录: {len(lines)} 条。这里只保留关键词居中预览；如可能相关，请继续调用 fetch_supplemental 或 read_file_range 深挖。】\n"
     if not lines:
-        return ""
-    return "\n\n【补充扫描索引：其余文件也有命中。这里只保留每行前30字；如可能相关，请继续调用 execute_grep 限定文件或 read_file_range 拉取原文。】\n" + "\n".join(lines)
-
+        return header if hit_count else ""
+    return header + "\n".join(lines)
 def execute_grep(pattern, include_files=None, stream=False):
     """执行带上下文的 rg 搜索，并对结果做去重和章节注解。"""
     def core():
@@ -252,8 +282,7 @@ def execute_grep(pattern, include_files=None, stream=False):
             res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
             if not res.stdout:
                 yield f"   📊 0命中"
-                supplement = _supplemental_grep_lines(pattern, [name for _, name in targets]) if include_files else ""
-                return "系统反馈：限定范围未找到匹配项" + supplement if supplement else "系统反馈：未找到匹配项"
+                return "系统反馈：限定范围未找到匹配项" if include_files else "系统反馈：未找到匹配项"
             records, current = [], []
             for line in res.stdout.strip().split("\n"):
                 (records.append(current), current := []) if line == "--" else current.append(line)
@@ -266,18 +295,99 @@ def execute_grep(pattern, include_files=None, stream=False):
                 elif key: dup_count += 1
                 else: new_records.append(record)
             yield f"   📊 命中: {len(records)} 条, 去重: {dup_count} 条, 新记录: {len(new_records)} 条"
-            if not new_records: return "系统反馈：所有结果已重复"
+            supplement = ""
+            if include_files and len(records) > 0:
+                yield "      🔎 [补充扫描] 开始检索其余文件"
+                supplement = _supplemental_grep_lines(pattern, [name for _, name in targets])
+                if supplement:
+                    if m := re.search(r"补充命中: (\d+) 条, 去重: (\d+) 条, 新记录: (\d+) 条", supplement):
+                        yield f"      🔎 [补充扫描] 命中: {m.group(1)} 条, 去重: {m.group(2)} 条, 新记录: {m.group(3)} 条"
+                    else:
+                        yield "      🔎 [补充扫描] 发现其余文件单行命中"
+                else:
+                    yield "      🔎 [补充扫描] 其余文件无新增命中"
+            if not new_records:
+                return "系统反馈：所有结果已重复" + supplement if supplement else "系统反馈：所有结果已重复"
             output_lines = sum([list(r) + ["--"] for r in new_records[:20]], [])[:-1]
             annotated, debug = annotate_grep_output(chr(10).join(output_lines))
             yield from debug
-            supplement = _supplemental_grep_lines(pattern, [name for _, name in targets]) if include_files else ""
-            if supplement:
-                yield "      🔎 [补充扫描] 发现其余文件单行命中"
             return f"系统反馈：{len(new_records)} 条新记录:\n{annotated}{supplement}"
         except Exception as e:
             return f"系统反馈：搜索出错 {e}"
     return _stream(core, stream)
 
+def _normalize_supplement_id(sid):
+    m = re.fullmatch(r"S0*(\d+)", (sid or "").strip().upper())
+    return f"S{int(m.group(1)):03d}" if m else (sid or "").strip().upper()
+
+def _resolve_supplement_id(raw_id):
+    """Resolve exact IDs first; tolerate the model confusing source line numbers for S IDs."""
+    sid = _normalize_supplement_id(raw_id)
+    if sid in SUPPLEMENT_CACHE:
+        return sid, None
+    m = re.fullmatch(r"S0*(\d+)", (raw_id or "").strip().upper())
+    if not m:
+        return sid, None
+    line_num = int(m.group(1))
+    matches = [cache_id for cache_id, rec in SUPPLEMENT_CACHE.items() if rec.get("line") == line_num]
+    if len(matches) == 1:
+        return matches[0], f"{raw_id}->{matches[0]}(按原文行{line_num}纠正)"
+    if len(matches) > 1:
+        return sid, f"{raw_id}(像原文行{line_num}，但匹配到多个补充索引: {', '.join(matches)})"
+    return sid, None
+
+def fetch_supplemental(ids, context_lines=CONTENT_LINES, stream=False):
+    def core():
+        yield f"🔎 [补充扫描] 开始读取: {ids}\n"
+        raw_requested = [x.strip().upper() for x in re.split(r"[,，\s]+", ids or "") if x.strip()]
+        if not raw_requested:
+            return "系统反馈：未提供补充索引编号，请传入如 S001,S003"
+        requested, seen, dup_count, corrections, ambiguous = [], set(), 0, [], []
+        for raw_id in raw_requested:
+            sid, note = _resolve_supplement_id(raw_id)
+            if note:
+                if "多个补充索引" in note:
+                    ambiguous.append(note)
+                else:
+                    corrections.append(note)
+            if sid in seen:
+                dup_count += 1
+                continue
+            seen.add(sid)
+            requested.append(sid)
+        yield f"   📊 请求: {len(raw_requested)} 个, 去重: {dup_count} 个, 待读取: {len(requested)} 个\n"
+        if corrections:
+            yield "   🔧 [编号纠正] " + "; ".join(corrections) + "\n"
+        if ambiguous:
+            yield "   ⚠️ [编号疑似行号] " + "; ".join(ambiguous) + "\n"
+
+        blocks, missing, read_count = [], [], 0
+        for sid in requested:
+            rec = SUPPLEMENT_CACHE.get(sid)
+            if not rec:
+                missing.append(sid)
+                continue
+            fp, ln = rec["file"], rec["line"]
+            preview30 = rec.get("content", "").strip().replace("\t", " ")[:30]
+            yield f"   ↳ [{sid}] {rec['filename']} 行{ln} | {preview30}\n"
+            try:
+                file_lines = open(fp, "r", encoding="utf-8", errors="ignore").readlines()
+                start = max(1, ln - int(context_lines))
+                end = min(len(file_lines), ln + int(context_lines))
+                SEARCH_RESULT_CACHE[(fp, ln)] = True
+                body = "".join(file_lines[start - 1:end])
+                ctx = get_chapter_context(fp, ln)
+                read_count += 1
+                blocks.append(f"--- [{sid}] {rec['filename']} 行{start}-{end} 命中行{ln} {ctx} ---\n{body}\n--- [{sid}] 片段结束 ---")
+            except Exception as e:
+                blocks.append(f"--- [{sid}] 读取失败: {e} ---")
+        if missing:
+            msg = "未找到补充索引编号: " + ", ".join(missing)
+            yield f"   ❌ {msg}\n"
+            blocks.append(msg)
+        yield f"   📊 读取完成: 成功 {read_count} 个, 缺失 {len(missing)} 个\n"
+        return "\n\n".join(blocks) if blocks else "系统反馈：未找到可读取的补充索引"
+    return _stream(core, stream)
 def read_file_range(filepath, start_line, end_line, stream=False):
     def core():
         yield f"📖 [Tool: Read] 阅读: {os.path.basename(filepath)} (行 {start_line}-{end_line})\n"
@@ -295,6 +405,7 @@ def read_file_range(filepath, start_line, end_line, stream=False):
 TOOLS_SCHEMA = [
     {"type": "function", "function": {"name": "get_document_toc", "description": "获取指定文档的详细章节目录", "parameters": {"type": "object", "properties": {"filename": {"type": "string"}}, "required": ["filename"]}}},
     {"type": "function", "function": {"name": "execute_grep", "description": "搜索关键词，返回匹配行及上下文", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}, "include_files": {"type": "string", "description": "指定要在哪些文件中搜索，填入文件名。为空则全库搜索。"}}, "required": ["pattern"]}}},
+    {"type": "function", "function": {"name": "fetch_supplemental", "description": "按补充扫描索引编号批量读取原文上下文", "parameters": {"type": "object", "properties": {"ids": {"type": "string", "description": "补充索引编号，多个用逗号分隔，如 S001,S003"}, "context_lines": {"type": "integer", "description": "命中行上下文行数，默认使用系统 CONTENT_LINES"}}, "required": ["ids"]}}},
     {"type": "function", "function": {"name": "read_file_range", "description": "读取指定文件的特定行数范围", "parameters": {"type": "object", "properties": {"filepath": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["filepath", "start_line", "end_line"]}}},
 ]
 EXTRACT_REFERENCES_SCHEMA = [
@@ -306,7 +417,7 @@ def extract_references(messages, final_answer):
     try:
         kw = build_chat_kwargs([
             {"role": "system", "content": "你是一个JSON提取专家。从对话历史中提取回答依据：文件名、起始行号line_number、结束行号end_line、条目号（如'第3.2.1条'或'(条文解释)3.2.1'，绝大部分有条目号，实在无则为空字符串）。遇到'行2539 [RG]'时输出line_number=2539,end_line=2539；遇到'行10776-10790 [CHUNK]'时输出line_number=10776,end_line=10790。只调用output_references函数，不要输出其他内容。"},
-            {"role": "user", "content": f"对话历史:\n{json.dumps(messages[-10:], ensure_ascii=False)}\n\n最终回答:\n{final_answer}\n\n请提取依据并调用output_references函数。"}
+            {"role": "user", "content": f"对话历史:\n{json.dumps(messages, ensure_ascii=False)}\n\n最终回答:\n{final_answer}\n\n请提取依据并调用output_references函数。"}
         ], tools=EXTRACT_REFERENCES_SCHEMA, stream=False)
         resp = get_client().chat.completions.create(**kw)
         if resp.choices and (tc := resp.choices[0].message.tool_calls):
@@ -323,7 +434,6 @@ def extract_references(messages, final_answer):
         print(f"⚠️ 依据提取失败: {e}")
     return None
 
-
 # ==================== Agent 主循环 ====================
 def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=True):
     """主循环：多轮调用工具，直到得到最终答案或达到轮次上限。"""
@@ -335,7 +445,7 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
                 content = final.get("content") or msg_obj.get("content")
             except Exception as e:
                 content = msg_obj.get("content") or f"API Error: {e}"
-            
+
             yield content if content else "生成失败: 最终回答为空"
             if extract_refs and content:
                 refs = extract_references(messages, content)
@@ -344,9 +454,8 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
                     for i, r in enumerate(refs.get("references", []), 1):
                         yield f"  [{i}] {r['filename']} 行{r['line_number']}" + (f" {r['article_number']}" if r.get('article_number') else "")
                     yield "\n" + "="*60
-        
-        global SEARCH_RESULT_CACHE
-        SEARCH_RESULT_CACHE = {}
+
+        reset_search_cache()
         yield f"🚀 V7 Agent ({len(FILE_MAP)} 文件) | 问题: {user_question}"
         messages = [
             {"role": "system", "content": f"""你是一个工程规范检索与解读专家。根据资料库内容回答，未提及的不要回答。
@@ -354,15 +463,14 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 【资料库全局目录】
 {get_global_toc_summary()}
 
-【工具】: get_document_toc(获取目录), execute_grep(搜索), read_file_range(读取原文)
+【工具】: get_document_toc(获取目录), execute_grep(搜索), fetch_supplemental(批量精读补充索引编号), read_file_range(读取原文)
 【纪律】:
 1. 必须调用工具查阅资料。
 2. 必须明确引用依据（如某规范第X条）。
-3. 信息不足时继续换关键词、查目录或读原文深挖，直到获得确凿证据。
+3. 信息不足时继续换关键词、查目录或读原文深挖，批量精读补充索引内容，直到获得确凿证据。
 4. 交叉验证防遗漏：必须全面收集所有相关规范中的信息，严禁“找到一处关联条款就立刻停止检索”的早退行为。"""},
             {"role": "user", "content": user_question},
         ]
-        
         for turn in range(15):
             yield f"\n[第 {turn + 1} 轮]"
             try:
@@ -375,20 +483,25 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
                 for tc in msg["tool_calls"]:
                     print(tc)
                     args = json.loads(tc["function"]["arguments"])
-                    func = {"execute_grep": execute_grep, "read_file_range": read_file_range, "get_document_toc": get_document_toc}[tc["function"]["name"]]
+                    func = {"execute_grep": execute_grep, "fetch_supplemental": fetch_supplemental, "read_file_range": read_file_range, "get_document_toc": get_document_toc}[tc["function"]["name"]]
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": func(**args)})
             else:
                 yield "\n✅ [最终答案] 流式输出中..."
                 yield from output_final(msg)
                 return
-                
         messages.append({"role": "user", "content": "已达到最大搜索次数，请立即总结回答"})
         yield from output_final({})
     return _stream(core, stream)
-
 
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
     # run_agent("高烈度区能否用砌体女儿墙")
     run_agent("门刚何时应采用揽风绳")
+
+
+
+
+
+
+
 
