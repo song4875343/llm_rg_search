@@ -40,7 +40,7 @@ def _thinking_caps(cfg=None):
     kind, forced = cfg.get('thinking'), 'thinking' in cfg['model_name'].lower()
     return {'supported': bool(kind), 'can_disable': bool(kind) and not forced, 'forced': forced, 'kind': kind}
 
-def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinking_enabled_override=None):
+def build_chat_kwargs(messages, stream=False, tools=None, tool_choice=None, temperature=1, thinking_enabled_override=None):
     caps = _thinking_caps()
     thinking_enabled = THINKING_ENABLED if thinking_enabled_override is None else thinking_enabled_override
     # Kimi 关闭思考模式时 temperature 必须为 0.6
@@ -49,7 +49,8 @@ def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinkin
     
     kw = {'model': model_name, 'messages': messages, 'temperature': temperature, 'stream': stream}
     if tools:
-        kw.update(tools=tools, tool_choice="auto")
+        # 这些版本的第 1 轮固定要调用工具，不再让模型自行判断是否用工具。
+        kw.update(tools=tools, tool_choice=tool_choice or "required")
     
     extra_body = (
         {'thinking': {'type': 'disabled'}} if caps['kind'] == 'kimi' and caps['can_disable'] and not thinking_enabled else
@@ -330,9 +331,14 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
         yield from _emit(stream, f"\n{'='*60}\n🚀 问题: {query}\n{'='*60}")
         messages = build_tool_messages(query, search_dir)
         yield from _emit(stream, "\n[第1轮] LLM 分析问题并调用工具...")
-        first_round_kwargs = build_chat_kwargs(messages, tools=TOOLS, temperature=1, thinking_enabled_override=False)
-        # 第一轮一定要检索，直接强制调用工具；这一步也不需要 thinking。
-        first_round_kwargs["tool_choice"] = {"type": "function", "function": {"name": "search_documents"}}
+        # 第一轮一定要检索，直接强制调用固定工具；这一步也不需要 thinking。
+        first_round_kwargs = build_chat_kwargs(
+            messages,
+            tools=TOOLS,
+            tool_choice={"type": "function", "function": {"name": "search_documents"}},
+            temperature=1,
+            thinking_enabled_override=False,
+        )
         response = client.chat.completions.create(**first_round_kwargs)
         if not response or not response.choices:
             yield from _emit(stream, "⚠️ API 返回空响应")

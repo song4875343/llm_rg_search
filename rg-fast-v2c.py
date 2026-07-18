@@ -65,7 +65,7 @@ def _thinking_caps(cfg=None):
     return {"supported": bool(kind), "can_disable": bool(kind) and not forced, "forced": forced, "kind": kind}
 
 
-def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinking_enabled_override=None):
+def build_chat_kwargs(messages, stream=False, tools=None, tool_choice=None, temperature=1, thinking_enabled_override=None):
     caps = _thinking_caps()
     thinking_enabled = THINKING_ENABLED if thinking_enabled_override is None else thinking_enabled_override
     if caps["kind"] == "kimi" and caps["can_disable"] and not thinking_enabled:
@@ -73,7 +73,8 @@ def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinkin
 
     kw = {"model": model_name, "messages": messages, "temperature": temperature, "stream": stream}
     if tools:
-        kw.update(tools=tools, tool_choice="auto")
+        # 这些版本的第 1 轮固定要调用工具，不再让模型自行判断是否用工具。
+        kw.update(tools=tools, tool_choice=tool_choice or "required")
 
     extra_body = (
         {"thinking": {"type": "disabled"}}
@@ -449,7 +450,13 @@ def run_search(
         step2_t0 = time.perf_counter()
         yield from _emit(stream, f"\n[第1次 LLM] 根据用户问题和 Top-{preview_top_n} 预览选择高概率文件并调用文件内 BM25...")
         selection_messages = build_selection_messages(query, preview_text, search_dir, preview_top_n=preview_top_n)
-        first_kwargs = build_chat_kwargs(selection_messages, tools=TOOLS, temperature=1, thinking_enabled_override=False)
+        first_kwargs = build_chat_kwargs(
+            selection_messages,
+            tools=TOOLS,
+            tool_choice={"type": "function", "function": {"name": "search_high_probability_files"}},
+            temperature=1,
+            thinking_enabled_override=False,
+        )
         response = client.chat.completions.create(**first_kwargs)
         if not response or not response.choices:
             yield from _emit(stream, "⚠️ 第1次 LLM 返回空响应，启用本地兜底证据选择")
@@ -501,8 +508,8 @@ def run_search(
 
 if __name__ == "__main__":
     # run_search(query="独立基础的高宽比", search_dir="./specs", preview_top_n=50, file_top_k=20, context_lines=0)
-    # run_search(query="筏板的最小厚度", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
-    run_search(query="门刚何时采用拦风绳", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
+    run_search(query="筏板的最小厚度", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
+    # run_search(query="门刚何时采用拦风绳", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
 
 
 

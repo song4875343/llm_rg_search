@@ -67,7 +67,7 @@ def _thinking_caps(cfg=None):
     return {"supported": bool(kind), "can_disable": bool(kind) and not forced, "forced": forced, "kind": kind}
 
 
-def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinking_enabled_override=None):
+def build_chat_kwargs(messages, stream=False, tools=None, tool_choice=None, temperature=1, thinking_enabled_override=None):
     caps = _thinking_caps()
     thinking_enabled = THINKING_ENABLED if thinking_enabled_override is None else thinking_enabled_override
     if caps["kind"] == "kimi" and caps["can_disable"] and not thinking_enabled:
@@ -75,7 +75,8 @@ def build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinkin
 
     kw = {"model": model_name, "messages": messages, "temperature": temperature, "stream": stream}
     if tools:
-        kw.update(tools=tools, tool_choice="auto")
+        # 这些版本的第 1 轮固定要调用工具，不再让模型自行判断是否用工具。
+        kw.update(tools=tools, tool_choice=tool_choice or "required")
 
     extra_body = (
         {"thinking": {"type": "disabled"}}
@@ -448,7 +449,7 @@ def build_selection_messages(query: str, preview_text: str, search_dir: str, pre
 注意：
 - target_files 必须来自可用文件列表，可传文件名片段。
 - item_ids 必须使用 P001 这种 Top-{preview_top_n} 条目编号。
-- 优先同时调用两个工具；如果某一路明显无价值，也至少调用另一路工具。""",
+- 必须同时调用两个工具：search_high_probability_files 和 read_preview_items；不要省略任一路。""",
         },
         {"role": "user", "content": f"用户问题：{query}\n\nTop-{preview_top_n} 条目预览：\n{preview_text}"},
     ]
@@ -543,7 +544,13 @@ def run_search(
         step2_t0 = time.perf_counter()
         yield from _emit(stream, f"\n[第1次 LLM] 根据用户问题和 Top-{preview_top_n} 预览调用证据工具...")
         selection_messages = build_selection_messages(query, preview_text, search_dir, preview_top_n=preview_top_n)
-        first_kwargs = build_chat_kwargs(selection_messages, tools=TOOLS, temperature=1, thinking_enabled_override=False)
+        first_kwargs = build_chat_kwargs(
+            selection_messages,
+            tools=TOOLS,
+            tool_choice="required",
+            temperature=1,
+            thinking_enabled_override=False,
+        )
         response = client.chat.completions.create(**first_kwargs)
         if not response or not response.choices:
             yield from _emit(stream, "⚠️ 第1次 LLM 返回空响应，启用本地兜底证据选择")
