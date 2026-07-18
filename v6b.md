@@ -1,411 +1,94 @@
-# rg_search_v6b 运行逻辑说明
+﻿# rg_search_v6b.py Agent 运行逻辑
 
-本文档描述 `rg_search_v6b.py` 当前版本的完整运行逻辑、主要参数、工具行为和可调优位置。
+本文档记录 `rg_search_v6b.py` 当前版本的完整运行逻辑：从启动、索引加载、模型调用、工具循环、补充扫描，到最终答案和回答依据抽取。
 
-## 1. 整体定位
+## 1. 总体定位
 
-`rg_search_v6b.py` 是一个面向本地规范文本库的 LLM 检索问答脚本。
+`rg_search_v6b.py` 是一个面向本地规范资料库的检索问答 Agent。它使用 OpenAI-compatible Chat Completions 接口驱动大模型，让模型在多轮对话中自主调用本地工具：
 
-当前版本保留的是原有高性能主流程：
+- `get_document_toc`：读取指定文档的详细目录。
+- `execute_grep`：调用 `rg` 搜索关键词，并返回命中行上下文。
+- `fetch_supplemental`：按补充扫描索引编号读取原文上下文。
+- `read_file_range`：读取指定文件的指定行范围。
 
-```text
-用户问题
-  -> LLM 读取全局目录并自主决定工具调用
-  -> execute_grep / get_document_toc / read_file_range
-  -> 多轮循环补充检索和读原文
-  -> LLM 生成最终答案
-  -> extract_references 提取回答依据
-```
+当前默认资料库是 `specs/`，默认索引目录是 `specs/.index/`。Agent 会先把资料库全局目录放进 system prompt，再让模型根据问题逐轮选择检索工具。工具返回原文证据后，模型继续判断是否还要换关键词、查目录、读上下文或读取补充索引；直到它不再请求工具，程序再生成最终答案，并额外调用一次模型抽取回答依据。
 
-在原有流程基础上，`v6b` 主要新增了一个轻量增强：
+## 2. 运行流程图
 
-```text
-当 LLM 限定某些高概率文件搜索时，
-execute_grep 会额外扫描其余文件，
-只返回短索引线索，不返回长正文。
-```
+<p align="center">
+  <img src="v6b_flow.svg" alt="rg_search_v6b.py Agent 运行流程图" width="100%">
+</p>
 
-这样可以在不破坏原有多轮 agent 能力的前提下，提高检索广度，减少“只搜了部分文件就停”的漏召回问题。
+流程图源文件：[`v6b_flow.svg`](v6b_flow.svg)
 
-## 2. 启动入口
+## 3. 启动与初始化
 
-文件底部入口：
+程序启动时会完成这些工作：
 
-```python
-if __name__ == "__main__":
-    # run_agent("高烈度区能否用砌体女儿墙")
-    run_agent("门刚何时应采用揽风绳")
-```
+1. 导入标准库、`OpenAI`、`dotenv` 和 `extract_toc.scanner.scan_folder`。
+2. 调用 `load_dotenv()` 读取 `.env`。
+3. 将脚本目录加入 `sys.path`，保证本地模块可导入。
+4. 通过 `num = 1` 从 `MODEL_DICT` 中选择模型，当前默认是 `kimi-k2.5`。
+5. 设置 `TARGET`、`INDEX_DIR`、`MAIN_INDEX` 和 `RG_EXE`。
+6. 扫描 `TARGET` 下的 `.txt` 和 `.md` 文件，生成 `FILE_MAP`。
+7. 初始化缓存：`DETAIL_TOC_CACHE`、`SEARCH_RESULT_CACHE`、`SUPPLEMENT_CACHE`、`SUPPLEMENT_KEY_MAP`、`CLIENT`。
 
-直接运行：
+`MODEL_DICT` 中每个模型配置通常包含 `base_url`、`.env` 中的 `api_key` 环境变量名、`model_name`，以及可选的 `thinking` 类型。`get_client()` 会懒加载 OpenAI 客户端，并复用全局 `CLIENT`。
 
-```powershell
-& e:/desktop/llm_rg_search/.venv/Scripts/python.exe e:/desktop/llm_rg_search/rg_search_v6b.py
-```
+## 4. 模型调用封装
 
-如果要换问题，修改 `run_agent(...)` 里的字符串即可。
+`build_chat_kwargs()` 负责组装 Chat Completions 请求参数，包括 `model`、`messages`、`temperature`、`stream`、`tools` 和 `tool_choice="auto"`。如果模型配置里声明了 `thinking` 类型，它还会适配不同厂商的思考模式参数：
 
-也可以在 Python 中调用：
-
-```python
-import rg_search_v6b as m
-m.run_agent("高烈度区能否用砌体女儿墙")
-```
-
-## 3. 全局配置参数
-
-### 3.1 模型选择
-
-```python
-num = 1
-MODEL_NAME = MODEL_DICT[num]["model_name"]
-```
-
-`num` 控制使用哪个模型。当前默认：
-
-```python
-1: kimi-k2.5
-```
-
-`MODEL_DICT` 中每个模型配置包含：
-
-| 字段 | 作用 |
+| 类型 | 控制方式 |
 |---|---|
-| `base_url` | OpenAI-compatible API 地址 |
-| `api_key` | 从 `.env` 中读取的环境变量名 |
-| `model_name` | 模型名称 |
-| `thinking` | 是否支持思考模式控制，例如 `kimi`、`qwen`、`deepseek` |
+| `kimi` | `extra_body={"thinking": {"type": "disabled"}}` |
+| `qwen` | `extra_body={"enable_thinking": thinking_enabled}` |
+| `deepseek` | `extra_body={"thinking": {"type": "enabled" / "disabled"}}` |
 
-调用客户端时：
+`_chat_stream()` 统一消费流式输出，聚合普通回答文本、reasoning 内容和工具调用。它还兼容部分模型最后一个 chunk 里 `choices=[]` 的情况，避免越界错误。
 
-```python
-OpenAI(
-    base_url=MODEL_DICT[num]["base_url"],
-    api_key=os.getenv(MODEL_DICT[num]["api_key"])
-)
-```
+## 5. 索引与目录
 
-### 3.2 搜索上下文行数
+`ensure_index_exists()` 检查 `specs/.index/index.json` 是否存在；如果不存在，就调用 `scan_folder(str(TARGET), recursive=True, output_dir=str(INDEX_DIR))` 重新生成索引。
 
-```python
-CONTENT_LINES = 10
-```
+`get_global_toc_summary()` 读取全局目录，并把 JSON 字符串注入 `run_agent()` 的 system prompt，让模型一开始就知道资料库结构。
 
-用于 `execute_grep()` 主搜索：
+`get_document_toc(filename)` 是暴露给模型的工具。它按文件名片段匹配 `FILE_MAP`，再读取 `specs/.index/{stem}.index.json`，用于查看某个文档的详细章节目录。
 
-```bash
-rg -C 10
-```
+`get_chapter_context(filepath, line_num)` 根据文件和行号，从详细目录中推断命中行所在章节、小节，并生成类似 `[出自：第X章 -> 第Y节 | 本章小节: ...]` 的上下文。搜索结果和补充索引都会尽量注入这个章节信息。
 
-含义是命中行上下各返回 10 行上下文。
+## 6. run_agent 主循环
 
-调大：
-
-- 优点：LLM 更容易看到完整条文附近内容
-- 缺点：返回内容更长，token 成本更高，噪声更多
-
-调小：
-
-- 优点：更省 token，检索更轻
-- 缺点：可能需要更多次 `read_file_range()` 深挖
-
-### 3.3 思考模式
-
-```python
-THINKING_ENABLED = False
-```
-
-`build_chat_kwargs()` 会根据模型类型控制思考模式：
-
-| 模型类型 | 控制方式 |
-|---|---|
-| `kimi` | `extra_body = {"thinking": {"type": "disabled"}}` |
-| `qwen` | `extra_body = {"enable_thinking": thinking_enabled}` |
-| `deepseek` | `extra_body = {"thinking": {"type": "enabled" / "disabled"}}` |
-
-Kimi 关闭思考时，代码会自动把 `temperature` 调整为 `0.6`。
-
-### 3.4 工作资料目录
-
-```python
-TARGET, INDEX_DIR = SCRIPT_DIR / "specs", SCRIPT_DIR / "specs" / ".index"
-```
-
-当前默认检索目录是：
-
-```text
-specs/
-```
-
-文件类型限制：
-
-```python
-f.endswith((".txt", ".md"))
-```
-
-所以只有 `.txt` 和 `.md` 文件会进入 `FILE_MAP`。
-
-如需切换目录，可调用：
-
-```python
-set_target_folder(folder_path)
-```
-
-它会更新：
-
-- `TARGET`
-- `INDEX_DIR`
-- `MAIN_INDEX`
-- `FILE_MAP`
-- 并清空搜索缓存
-
-### 3.5 rg 可执行文件
-
-```python
-RG_EXE = SCRIPT_DIR / "rg.exe" if exists else "rg"
-```
-
-优先使用项目目录下的 `rg.exe`，否则使用系统 PATH 中的 `rg`。
-
-## 4. 索引与目录
-
-### 4.1 全局目录
-
-```python
-get_global_toc_summary()
-```
-
-会读取：
-
-```text
-specs/.index/index.json
-```
-
-如果不存在，则调用：
-
-```python
-scan_folder(str(TARGET), recursive=True, output_dir=str(INDEX_DIR))
-```
-
-全局目录会放进 `run_agent()` 的 system prompt 中，让 LLM 先看到资料库整体结构。
-
-### 4.2 单文件详细目录
-
-工具：
-
-```python
-get_document_toc(filename)
-```
-
-用途：
-
-- 根据文件名片段匹配 `FILE_MAP`
-- 读取对应的 `.index/{stem}.index.json`
-- 返回该文档的章节目录
-
-LLM 可以在信息不足时调用这个工具，先看某本规范的章节结构，再决定搜索或阅读范围。
-
-### 4.3 章节上下文注入
-
-```python
-get_chapter_context(filepath, line_num)
-```
-
-根据文件名和命中行号，从详细目录中推断该行所在章节，返回类似：
-
-```text
-[出自：第X章 -> 第Y节 | 本章小节: ...]
-```
-
-这个上下文会被用于：
-
-- 主搜索注解
-- 补充扫描索引
-
-## 5. 主 Agent 循环
-
-入口：
+入口函数是：
 
 ```python
 run_agent(user_question, show_reasoning=False, stream=False, extract_refs=True)
 ```
 
-参数：
+参数含义：
 
-| 参数 | 默认值 | 说明 |
+| 参数 | 默认值 | 作用 |
 |---|---:|---|
 | `user_question` | 必填 | 用户问题 |
 | `show_reasoning` | `False` | 是否显示模型 reasoning 字段 |
-| `stream` | `False` | 是否返回 generator 流 |
-| `extract_refs` | `True` | 最终答案后是否提取引用依据 |
+| `stream` | `False` | 是否以 generator 方式返回运行过程 |
+| `extract_refs` | `True` | 最终答案后是否抽取回答依据 |
 
-### 5.1 初始化
+每次运行先调用 `reset_search_cache()`，清空 `SEARCH_RESULT_CACHE`、`SUPPLEMENT_CACHE` 和 `SUPPLEMENT_KEY_MAP`。然后构造两条初始消息：system prompt 和用户问题。
 
-每次运行会清空搜索缓存：
+system prompt 的关键纪律是：必须调用工具查阅资料；必须明确引用依据；信息不足时继续换关键词、查目录或读原文；必须全面收集相关规范，不能找到一处就停止；最终回答前最少进行一次批量精读补充索引内容。
 
-```python
-SEARCH_RESULT_CACHE = {}
-```
+主循环最多执行 15 轮。每轮先调用 `_chat_stream(messages, TOOLS_SCHEMA, ...)`，如果模型返回 `tool_calls`，程序就解析工具名和参数，调用本地函数，并把工具结果作为 `role="tool"` 的消息追加回 `messages`。如果模型没有返回工具调用，说明它准备回答，程序进入最终答案阶段。
 
-然后构造对话：
+如果 15 轮后仍未结束，程序会追加 `已达到最大搜索次数，请立即总结回答`，然后强制生成最终答案。
 
-```python
-messages = [
-    {"role": "system", "content": "...全局目录 + 工具说明 + 纪律..."},
-    {"role": "user", "content": user_question},
-]
-```
+## 7. execute_grep 主搜索
 
-system prompt 中的核心纪律：
-
-1. 必须调用工具查阅资料
-2. 必须明确引用依据
-3. 信息不足时继续换关键词、查目录或读原文
-4. 防遗漏，禁止找到一处就停止检索
-
-### 5.2 最多 15 轮工具循环
-
-```python
-for turn in range(15):
-```
-
-每轮：
-
-1. 调用 `_chat_stream(messages, TOOLS_SCHEMA, ...)`
-2. 如果模型返回 tool calls，则执行工具
-3. 工具结果追加到 `messages`
-4. 如果模型不再调用工具，则进入最终回答阶段
-
-工具调用执行逻辑：
-
-```python
-func = {
-    "execute_grep": execute_grep,
-    "read_file_range": read_file_range,
-    "get_document_toc": get_document_toc
-}[tool_name]
-```
-
-### 5.3 达到最大轮次
-
-如果 15 轮后仍未结束，会追加：
-
-```text
-已达到最大搜索次数，请立即总结回答
-```
-
-然后强制进入最终答案生成。
-
-## 6. LLM 调用与流式处理
-
-### 6.1 build_chat_kwargs
-
-```python
-build_chat_kwargs(messages, stream=False, tools=None, temperature=1, thinking_enabled_override=None)
-```
-
-职责：
-
-- 填入模型名
-- 填入 messages
-- 填入 temperature
-- 如果有 tools，则设置：
-
-```python
-tools=tools
-tool_choice="auto"
-```
-
-- 根据不同模型设置 thinking extra body
-
-### 6.2 _chat_stream
-
-```python
-_chat_stream(messages, tools=None, show_reasoning=False, thinking_enabled_override=None, stream_content=True)
-```
-
-职责：
-
-- 流式调用模型
-- 聚合普通文本输出
-- 聚合 reasoning 内容
-- 聚合 tool calls
-- 兼容部分模型最后一个 chunk 的 `choices=[]`
-
-返回：
-
-```python
-(
-    {
-        "role": "assistant",
-        "content": "...",
-        "tool_calls": [...],
-        "reasoning_content": "..."
-    },
-    reasoning_text
-)
-```
-
-## 7. 工具 Schema
-
-### 7.1 get_document_toc
-
-```json
-{
-  "name": "get_document_toc",
-  "description": "获取指定文档的详细章节目录",
-  "parameters": {
-    "filename": "string"
-  }
-}
-```
-
-LLM 用它查看某个文件的章节目录。
-
-### 7.2 execute_grep
-
-```json
-{
-  "name": "execute_grep",
-  "description": "搜索关键词，返回匹配行及上下文",
-  "parameters": {
-    "pattern": "string",
-    "include_files": "string"
-  }
-}
-```
-
-参数：
-
-| 参数 | 必填 | 说明 |
-|---|---|---|
-| `pattern` | 是 | rg 搜索关键词或正则 |
-| `include_files` | 否 | 限定在哪些文件中搜索，填文件名片段，逗号分隔 |
-
-### 7.3 read_file_range
-
-```json
-{
-  "name": "read_file_range",
-  "parameters": {
-    "filepath": "string",
-    "start_line": "integer",
-    "end_line": "integer"
-  }
-}
-```
-
-LLM 用它根据文件和行号读取原文。
-
-## 8. execute_grep 主搜索逻辑
-
-函数：
+入口函数：
 
 ```python
 execute_grep(pattern, include_files=None, stream=False)
 ```
-
-### 8.1 rg 命令
 
 基础命令：
 
@@ -413,389 +96,183 @@ execute_grep(pattern, include_files=None, stream=False)
 rg -n -i -H -C {CONTENT_LINES} -e {pattern} -m 50
 ```
 
-参数含义：
-
-| rg 参数 | 说明 |
+| 参数 | 作用 |
 |---|---|
 | `-n` | 输出行号 |
 | `-i` | 忽略大小写 |
 | `-H` | 输出文件名 |
-| `-C CONTENT_LINES` | 返回命中上下文 |
-| `-e pattern` | 搜索表达式 |
+| `-C` | 返回命中行上下文 |
+| `-e` | 指定搜索表达式 |
 | `-m 50` | 每个文件最多 50 个匹配 |
 
-如果有 `include_files`：
+当模型传入 `include_files` 时，代码会按文件名片段从 `FILE_MAP` 中挑选目标文件，只在这些文件中搜索。否则直接搜索整个 `TARGET` 目录。
 
-```python
-targets = [
-    (FILE_MAP[k], k)
-    for req in include_files.split(",")
-    for k in FILE_MAP
-    if req.strip() in k
-]
-```
-
-即：按文件名片段模糊匹配。
-
-如果没有 `include_files`，就在整个 `TARGET` 目录中搜索。
-
-### 8.2 主搜索去重
-
-主搜索使用全局缓存：
-
-```python
-SEARCH_RESULT_CACHE
-```
-
-去重 key：
-
-```python
-(filepath, line_number)
-```
-
-逻辑：
-
-```python
-if key and key not in SEARCH_RESULT_CACHE:
-    SEARCH_RESULT_CACHE[key] = True
-    new_records.append(record)
-elif key:
-    dup_count += 1
-```
-
-作用：
-
-- 多轮搜索中避免同一命中行反复返回
-- 让 LLM 更容易看到新增信息
-
-### 8.3 返回条数限制
-
-主搜索内部可能命中很多条，但最终只注解前 20 条新记录：
-
-```python
-new_records[:20]
-```
-
-返回里仍会告诉 LLM 总共有多少条新记录：
-
-```text
-系统反馈：{len(new_records)} 条新记录
-```
-
-### 8.4 注解输出
-
-主搜索结果会经过：
-
-```python
-annotate_grep_output(...)
-```
-
-转换成：
+主搜索会按 `(filepath, line_number)` 写入 `SEARCH_RESULT_CACHE` 去重，避免多轮搜索反复返回同一条命中。结果会经过 `annotate_grep_output()` 转换成更适合模型阅读的格式：
 
 ```text
 [下面内容出自：文件名-->章节上下文]
-行号xxx-->正文
+行号123-->原文内容
+  行号124-->上下文内容
+--
 ```
 
-如果章节解析失败，会在终端输出调试信息：
+主搜索可能命中很多条，但实际只把前 20 条新记录展开给模型，以控制 token。
 
-```text
-解析块数
-找到章节
-未找到
-失败示例
-```
+## 8. 补充扫描机制
 
-## 9. 补充扫描索引
+补充扫描是这个版本的重要增强点。它解决的问题是：模型有时会先限定一两本高概率规范搜索，如果这些文件已经命中，它可能过早停止，漏掉其他规范中的相关条文。
 
-函数：
+触发条件：`execute_grep()` 使用了 `include_files`，并且限定文件内有命中。
 
-```python
-_supplemental_grep_lines(pattern, excluded_names, limit=30, preview_chars=30)
-```
-
-这是 `v6b` 当前相对原版的主要增强点。
-
-### 9.1 触发条件
-
-只有当 `execute_grep()` 使用了 `include_files` 时才触发。
-
-也就是说：
-
-```text
-LLM 限定高概率文件搜索
-  -> 主搜索搜索限定文件
-  -> 补充扫描搜索剩余文件
-```
-
-如果 LLM 本来就是全库搜索，则不触发补充扫描。
-
-### 9.2 搜索范围
-
-补充扫描排除主搜索已经限定的文件：
-
-```python
-remaining = [
-    (name, path)
-    for name, path in FILE_MAP.items()
-    if name not in excluded_names
-]
-```
-
-### 9.3 rg 命令
-
-补充扫描使用更轻量的 rg：
+触发后，`_supplemental_grep_lines(pattern, excluded_names, limit=30, preview_chars=50)` 会排除主搜索已经限定的文件，只扫描剩余文件。它使用更轻量的命令：
 
 ```bash
 rg -n -i -H -e {pattern} -m 12 {remaining_files}
 ```
 
-与主搜索不同：
+补充扫描不带 `-C`，不返回大段上下文；每个剩余文件最多 12 条命中，全局最多返回 30 条短索引。每条补充命中会生成 `S001`、`S002` 这样的编号，并写入 `SUPPLEMENT_CACHE` 和 `SUPPLEMENT_KEY_MAP`。
 
-- 不带 `-C`
-- 不返回上下文
-- 每个文件最多 12 个匹配
-- 最终全局最多返回 `limit=30` 条索引
-
-### 9.4 补充扫描去重
-
-补充扫描有两层去重：
-
-1. 本次补充扫描内部去重：
-
-```python
-seen = set()
-key = (fp, ln)
-```
-
-2. 跳过主搜索已经返回过的行：
-
-```python
-if key in seen or key in SEARCH_RESULT_CACHE:
-    continue
-```
-
-这样补充索引不会重复提示主搜索已经给过的命中。
-
-### 9.5 短索引预览
-
-补充扫描不是正文召回，而是索引线索。
-
-每条只保留：
-
-- 编号
-- 文件名
-- 行号
-- 章节上下文
-- 命中行前 30 字
-
-代码：
-
-```python
-preview = content.strip().replace("\\t", " ")
-preview = preview[:preview_chars] + ("..." if len(preview) > preview_chars else "")
-```
-
-输出示例：
+返回给模型的补充索引类似：
 
 ```text
-【补充扫描索引：其余文件也有命中。这里只保留每行前30字；如可能相关，请继续调用 execute_grep 限定文件或 read_file_range 拉取原文。】
-[L003] 建筑与市政工程抗震通用规范.txt 行43
-索引预览-->5.1.13  建筑主体结构中，幕墙、围护墙、隔墙、女儿墙、...
+补充ID=S001 | 文件=xxx.txt | 原文行=2539 [出自：...]
+索引预览-->...命中关键词周边内容...
 ```
 
-这段提示的设计意图是：
+如果模型判断某条补充索引可能相关，应该继续调用 `fetch_supplemental(ids="S001,S003")` 批量精读。
 
-```text
-告诉 LLM：其他文件可能也有资料；
-但不要直接把大量正文塞进上下文；
-如果 LLM 判断有价值，应继续调用工具深挖。
-```
+## 9. fetch_supplemental 批量精读
 
-### 9.6 补充扫描接入点
-
-如果限定范围没有命中：
+入口函数：
 
 ```python
-return "系统反馈：限定范围未找到匹配项" + supplement
+fetch_supplemental(ids, context_lines=CONTENT_LINES, stream=False)
 ```
 
-如果限定范围有命中：
+它根据补充编号读取原文上下文，并做几类保护：
 
-```python
-return f"系统反馈：{len(new_records)} 条新记录:\n{annotated}{supplement}"
-```
+- 标准化编号，例如 `S1` 转成 `S001`。
+- 对重复编号去重。
+- 如果模型把原文行号误当成补充编号，会尝试按行号纠正。
+- 如果同一行号对应多个补充索引，会提示歧义。
 
-终端会额外显示：
+读取成功后返回：
 
 ```text
-🔎 [补充扫描] 发现其余文件单行命中
+--- [S001] 文件名 行100-120 命中行110 [出自：章节] ---
+原文内容
+--- [S001] 片段结束 ---
 ```
 
-## 10. read_file_range 读取原文
+已经精读过的补充命中会写入 `SEARCH_RESULT_CACHE`，减少后续重复返回。
 
-函数：
+## 10. read_file_range 原文读取
+
+入口函数：
 
 ```python
 read_file_range(filepath, start_line, end_line, stream=False)
 ```
 
-逻辑：
+它用于在已知文件和行号后直接读取一段原文。路径解析规则是：如果 `filepath` 是真实路径就直接读取；否则用 basename 到 `FILE_MAP` 中查找；最后按 `start_line` 到 `end_line` 截取内容。
 
-1. 如果 `filepath` 是真实路径，直接使用
-2. 否则按 basename 到 `FILE_MAP` 中查找
-3. 读取指定行范围
-4. 返回：
+返回格式：
 
 ```text
 --- 文件名 ---
-原文
+原文内容
 --- 片段结束 ---
 ```
 
-注意：
+## 11. 最终答案与依据抽取
 
-- 行号从 1 开始
-- 会自动 clamp 到文件实际长度
-- 使用 `encoding="utf-8", errors="ignore"`
+当模型停止调用工具时，`run_agent()` 进入 `output_final()`。程序会基于完整对话历史再调用一次 `_chat_stream(messages, thinking_enabled_override=False)`，整理生成最终答案。
 
-## 11. 最终答案与引用提取
-
-当 LLM 不再调用工具时，进入：
-
-```python
-output_final(msg_obj)
-```
-
-### 11.1 生成最终答案
-
-代码会再调用一次：
-
-```python
-_chat_stream(messages, thinking_enabled_override=False)
-```
-
-目的是基于完整对话历史生成最终回答。
-
-### 11.2 引用提取
-
-如果：
-
-```python
-extract_refs=True
-```
-
-则调用：
+如果 `extract_refs=True`，随后调用：
 
 ```python
 extract_references(messages, final_answer)
 ```
 
-它使用单独的 tool：
+它使用单独的工具 schema `output_references`，要求模型从对话历史和最终答案中提取：
 
-```python
-output_references
-```
-
-提取字段：
-
-| 字段 | 说明 |
+| 字段 | 含义 |
 |---|---|
 | `filename` | 文件名 |
-| `line_number` | 起始行 |
-| `end_line` | 结束行 |
-| `article_number` | 条文号，例如 `6.5.2` |
+| `line_number` | 起始行号 |
+| `end_line` | 结束行号 |
+| `article_number` | 条文号或条目号 |
 
-最终输出类似：
+最终会追加类似内容：
 
 ```text
 ============================================================
 📚 [回答依据]:
-  [1] 6砌体结构设计规范[附条文说明].txt 行111 6.5.2
+  [1] xxx.txt 行123 第x.x.x条
 ============================================================
 ```
 
-## 12. 缓存机制
+## 12. 缓存设计
 
-### 12.1 DETAIL_TOC_CACHE
+| 缓存 | 作用 | 清空时机 |
+|---|---|---|
+| `DETAIL_TOC_CACHE` | 缓存每个文件的详细目录 | 不在每次问题中清空 |
+| `SEARCH_RESULT_CACHE` | 记录主搜索和已精读补充索引的 `(文件, 行号)` | 每次 `run_agent()` 开始清空 |
+| `SUPPLEMENT_CACHE` | 保存 `S001` 等补充索引对应的文件、行号、内容 | 每次 `run_agent()` 开始清空 |
+| `SUPPLEMENT_KEY_MAP` | 防止同一补充命中重复编号 | 每次 `run_agent()` 开始清空 |
+| `CLIENT` | 复用 OpenAI 客户端 | 进程级复用 |
 
-```python
-DETAIL_TOC_CACHE = {}
-```
+## 13. 关键可调参数
 
-缓存每个文件的详细目录，避免重复读取 `.index/{stem}.index.json`。
+| 参数 | 默认值 | 影响 |
+|---|---:|---|
+| `num` | `1` | 选择模型 |
+| `CONTENT_LINES` | `10` | 主搜索和补充精读的上下文行数 |
+| `THINKING_ENABLED` | `False` | 是否启用模型思考模式 |
+| `TARGET` | `specs` | 检索资料库目录 |
+| `execute_grep -m` | `50` | 主搜索每个文件最多命中数 |
+| `new_records[:20]` | `20` | 每轮最多展开给模型的主搜索记录数 |
+| `_supplemental_grep_lines limit` | `30` | 补充扫描最多返回索引数 |
+| `_supplemental_grep_lines preview_chars` | `50` | 补充索引预览字符数 |
+| `fetch_supplemental context_lines` | `CONTENT_LINES` | 读取补充索引时的上下文行数 |
+| `range(15)` | `15` | Agent 最大工具循环轮数 |
 
-### 12.2 SEARCH_RESULT_CACHE
+## 14. 一次典型运行示例
 
-```python
-SEARCH_RESULT_CACHE = {}
-```
+以问题 `门刚何时应采用揽风绳` 为例，可能过程是：
 
-每次 `run_agent()` 开始时清空。
+1. 程序启动，加载模型配置和 `specs` 文件列表。
+2. `run_agent()` 清空搜索缓存，读取全局目录，构造 system prompt。
+3. 第 1 轮模型调用 `execute_grep(pattern="揽风绳")` 或搜索同义词 `缆风绳`。
+4. 如果命中不足，模型继续换关键词，例如 `门式刚架`、`施工阶段稳定`。
+5. 如果模型限定某些文件搜索，`execute_grep()` 会额外扫描其余文件，并返回 `S001` 等补充索引。
+6. 模型根据补充索引调用 `fetch_supplemental(ids="S001,S002")` 批量精读。
+7. 模型对关键命中行调用 `read_file_range()` 读取更完整的上下文。
+8. 当证据足够后，模型停止调用工具。
+9. `output_final()` 生成最终答案。
+10. `extract_references()` 从对话历史中抽取文件名、行号和条文号，追加回答依据。
 
-主搜索写入缓存，补充扫描读取缓存但不写入缓存。
+## 15. 核心设计原则
 
-这样的设计含义：
+`v6b` 的核心不是替模型写死检索路径，而是在工具层给模型更好的信息反馈：
 
-- 主搜索返回过的行，不再重复返回
-- 补充扫描只是索引提示，不污染主搜索去重状态
+- 全局目录让模型先知道资料库结构。
+- `rg` 主搜索提供上下文和章节定位。
+- 搜索缓存减少重复命中。
+- 限定文件搜索时自动补充扫描其余文件，降低漏检概率。
+- 补充扫描只返回短索引，避免 token 爆炸。
+- `fetch_supplemental` 让模型按需批量精读真正相关的补充命中。
+- 最终再单独抽取回答依据，使答案和证据更容易核查。
 
-## 13. 当前关键可调参数
-
-| 参数 | 位置 | 默认值 | 影响 |
-|---|---|---:|---|
-| `num` | 顶部配置 | `1` | 选择模型 |
-| `CONTENT_LINES` | 顶部配置 | `10` | 主搜索上下文行数 |
-| `THINKING_ENABLED` | 顶部配置 | `False` | 是否启用模型思考 |
-| `TARGET` | 顶部配置 | `specs` | 检索资料目录 |
-| `execute_grep -m` | `execute_grep()` | `50` | 主搜索每文件最大匹配数 |
-| `new_records[:20]` | `execute_grep()` | `20` | 每次返回给 LLM 的主搜索记录数 |
-| `limit` | `_supplemental_grep_lines()` | `30` | 补充索引最多返回条数 |
-| `preview_chars` | `_supplemental_grep_lines()` | `30` | 补充索引每条预览字符数 |
-| 补充扫描 `-m` | `_supplemental_grep_lines()` | `12` | 补充扫描每文件最大匹配数 |
-| `range(15)` | `run_agent()` | `15` | 最大工具循环轮数 |
-
-## 14. 典型运行过程示例
-
-以问题：
-
-```text
-高烈度区能否用砌体女儿墙
-```
-
-可能流程：
-
-```text
-第 1 轮
-  LLM 调用 execute_grep("女儿墙", include_files="砌体结构设计规范")
-  主搜索返回砌体规范中的女儿墙条文
-  补充扫描提示抗震通用规范、建筑抗震设计规范也有命中
-
-第 2 轮
-  LLM 根据补充索引调用 execute_grep 或 read_file_range 深挖抗震规范
-
-第 3 轮
-  LLM 读取关键行附近原文
-
-最终
-  LLM 综合回答
-  extract_references 提取引用依据
-```
-
-## 15. 设计原则
-
-当前 `v6b` 的核心设计原则是：
+整体运行逻辑可以概括为：
 
 ```text
-不要替代原 agent 的判断能力；
-只在工具层给它更多低成本线索。
+全局目录定向
+  -> 多轮工具检索
+  -> 主搜索给证据
+  -> 补充扫描防遗漏
+  -> 原文精读确认
+  -> 最终回答
+  -> 依据抽取
 ```
-
-因此补充扫描不是完整第二套流程，也不是替代全库搜索，而是：
-
-- 当 LLM 已经限定文件时，自动补一点其他文件索引
-- 只给短预览，避免资料集变大时 token 爆炸
-- 让 LLM 自己决定是否继续深挖
-
-这保留了原流程的搜索精度，同时改善了跨文件召回广度。
 

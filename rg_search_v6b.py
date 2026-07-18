@@ -19,7 +19,7 @@ MODEL_DICT = {
     4: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3.5-27B', 'thinking': 'qwen'},
     5: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-30B-A3B-Instruct-2507', 'thinking': 'qwen'},
     6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'gemma4:31b-cloud'},
-    7: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'moonshotai/kimi-k2.6'},
+    7: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'qwen/qwen3.5-397b-a17b'},
     8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
     9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.7-plus', 'thinking': 'qwen'},
     10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-35b-a3b', 'thinking': 'qwen'},
@@ -468,7 +468,7 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 1. 必须调用工具查阅资料。
 2. 必须明确引用依据（如某规范第X条）。
 3. 信息不足时继续换关键词、查目录或读原文深挖，批量精读补充索引内容，直到获得确凿证据。
-4. 交叉验证防遗漏：必须全面收集所有相关规范中的信息，严禁“找到一处关联条款就立刻停止检索”的早退行为。"""},
+4. 交叉验证防遗漏：必须全面收集所有相关规范中的信息，严禁“找到一处关联条款就立刻停止检索”的早退行为，最终回答最少进行一次批量精读补充索引内容"""},
             {"role": "user", "content": user_question},
         ]
         for turn in range(15):

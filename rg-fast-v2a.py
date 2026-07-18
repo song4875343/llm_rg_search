@@ -1,12 +1,15 @@
-"""
+﻿"""
 简化版智能检索系统 - 基于 LLM Function Call + BM25 排序
 压缩版本，使用语法糖和函数式编程减少代码行数
 """
 
-import os, json, subprocess, re
+import os, json, subprocess, re, bisect, sys
 from openai import OpenAI
 from dotenv import load_dotenv
 from bm25_module import BM25
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 load_dotenv()
 
@@ -24,7 +27,7 @@ MODEL_CONFIG = {
     10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-plus', 'thinking': 'qwen'},
     11: {'base_url': 'http://127.0.0.1:8013/v1', 'api_key': 'GEMINI_API_KEY', 'model_name': 'gemini-3.1-pro', 'thinking': 'kimi'},
 }
-MODEL_NUM = 3
+MODEL_NUM = 8
 THINKING_ENABLED = False
 config = MODEL_CONFIG[MODEL_NUM]
 client = OpenAI(base_url=config['base_url'], api_key=os.getenv(config['api_key']))
@@ -114,13 +117,18 @@ def chunk_file(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             text = f.read()
-            sentences = [
-                (sentence, text.count('\n', 0, start_pos) + 1, start_pos, text.count('\n', 0, end_pos) + 1, end_pos)
-                for match in re.finditer(r'[^。！？.!?]+[。！？.!?]?', text)
-                if (sentence := match.group().strip())
-                for start_pos in [match.start() + len(match.group()) - len(match.group().lstrip())]
-                for end_pos in [match.end() - len(match.group()) + len(match.group().rstrip())]
-            ]
+        line_starts = [0] + [m.end() for m in re.finditer('\n', text)]
+        sentences = []
+        for match in re.finditer(r'[^。！？.!?]+[。！？.!?]?', text):
+            raw = match.group()
+            sentence = raw.strip()
+            if not sentence:
+                continue
+            left_trim, right_trim = len(raw) - len(raw.lstrip()), len(raw) - len(raw.rstrip())
+            start_pos, end_pos = match.start() + left_trim, match.end() - right_trim
+            start_line = bisect.bisect_right(line_starts, start_pos)
+            end_line = bisect.bisect_right(line_starts, end_pos)
+            sentences.append((sentence, start_line, start_pos, end_line, end_pos))
     except Exception as e:
         print(f"⚠️ 读取文件 {filepath} 失败: {e}")
         return []
@@ -146,7 +154,6 @@ def chunk_file(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
     if current_chunk:
         chunks.append({'content': ''.join(sent for sent, _, _, _, _ in current_chunk), 'file': filepath, 'start_line': current_chunk[0][1], 'end_line': current_chunk[-1][3], 'start_pos': current_chunk[0][2], 'type': 'chunk'})
     return chunks
-
 def attach_bm25_scores(candidates: list, query: str) -> list:
     """对候选内容进行 BM25 打分"""
     if not candidates:
@@ -369,9 +376,14 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
 
 # ================= 主程序 =================
 if __name__ == "__main__":
-    # 非流式模式（默认）
-    run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0)
-    
+    # 非流式模式（默认）板的最小厚度
+    # run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0)
+    run_search(query="筏板的最小厚度", search_dir="./specs", top_k=10, context_lines=0)
     # 流式模式示例
     # for chunk in run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0, stream=True):
     #     print(chunk, end='', flush=True)
+
+
+
+
+

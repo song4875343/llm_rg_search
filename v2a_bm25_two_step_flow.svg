@@ -1,0 +1,161 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="1760" viewBox="0 0 1640 1760" role="img" aria-labelledby="title desc">
+  <title id="title">rg-fast-v2a.py：BM25 两步召回 + 两次 LLM 流程图</title>
+  <desc id="desc">展示 rg-fast-v2a.py 改造目标：系统先用 BM25 返回 Top-50 条目和前 50 字预览；第一次 LLM 基于用户问题和 Top-50 条目调用两个本地工具扩展全文证据并合并去重；第二次 LLM 生成终稿。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#334155"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.14"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 32px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 15px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #475569; }
+      .section { fill: #fff; stroke: #cbd5e1; stroke-width: 1.5; rx: 18; filter: url(#shadow); }
+      .section-title { font: 700 18px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #334155; }
+      .node { stroke-width: 1.8; rx: 14; filter: url(#shadow); }
+      .user { fill: #e0f2fe; stroke: #0284c7; }
+      .system { fill: #ecfeff; stroke: #0891b2; }
+      .llm1 { fill: #fef3c7; stroke: #d97706; }
+      .tool { fill: #dcfce7; stroke: #16a34a; }
+      .merge { fill: #ede9fe; stroke: #7c3aed; }
+      .llm2 { fill: #fee2e2; stroke: #dc2626; }
+      .text { font: 700 20px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #0f172a; text-anchor: middle; dominant-baseline: middle; }
+      .small { font: 500 14px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #475569; text-anchor: middle; dominant-baseline: middle; }
+      .label { font: 700 14px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #334155; text-anchor: middle; }
+      .line { fill: none; stroke: #334155; stroke-width: 2; marker-end: url(#arrow); }
+      .thin { fill: none; stroke: #64748b; stroke-width: 1.7; marker-end: url(#arrow); }
+      .note { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.2; rx: 12; }
+      .note-title { font: 700 15px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #334155; }
+      .note-text { font: 500 13px 'Microsoft YaHei','Segoe UI',Arial,sans-serif; fill: #475569; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1640" height="1760"/>
+  <text class="title" x="820" y="50" text-anchor="middle">rg-fast-v2a.py：BM25 两步召回模式</text>
+  <text class="subtitle" x="820" y="80" text-anchor="middle">系统 Top-50 前 50 字预览 -> 第 1 次 LLM 调工具扩展证据 -> 第 2 次 LLM 生成终稿</text>
+
+  <rect class="section" x="80" y="115" width="1050" height="1530"/>
+  <text class="section-title" x="120" y="145">主流程</text>
+
+  <rect class="node user" x="425" y="170" width="360" height="70"/>
+  <text class="text" x="605" y="198">用户提问</text>
+  <text class="small" x="605" y="220">自然语言问题</text>
+
+  <rect class="node system" x="245" y="300" width="720" height="175"/>
+  <text class="text" x="605" y="330">第 1 步：系统层全局 BM25 召回</text>
+  <text class="small" x="605" y="364">非 LLM：根据用户问题检索预建切片索引</text>
+  <text class="small" x="605" y="394">取 Top-50 条目</text>
+  <text class="small" x="605" y="424">返回：条目编号 + 文件路径 + 起止行号 + 前 50 字预览</text>
+
+  <rect class="node llm1" x="245" y="555" width="720" height="185"/>
+  <text class="text" x="605" y="585">第 2 步：第 1 次 LLM 选择挖掘方向</text>
+  <text class="small" x="605" y="620">输入：用户问题 + Top-50 条目预览</text>
+  <text class="small" x="605" y="650">调用工具 1：选择高概率文件列表，在该范围内 BM25 召回</text>
+  <text class="small" x="605" y="680">调用工具 2：选择需深挖条目编号，读取对应全文片段</text>
+  <text class="small" x="605" y="710">目标：扩展出可用于终稿的完整证据集合</text>
+
+  <rect class="section" x="155" y="815" width="900" height="425"/>
+  <text class="section-title" x="195" y="845">本地工具执行与证据整理</text>
+
+  <rect class="node tool" x="200" y="900" width="395" height="150"/>
+  <text class="text" x="397.5" y="928">工具 1：高概率文件 BM25</text>
+  <text class="small" x="397.5" y="962">输入：LLM 选出的文件列表</text>
+  <text class="small" x="397.5" y="992">逻辑：在这些文件范围内做 BM25 召回</text>
+  <text class="small" x="397.5" y="1022">返回：Top-N 完整片段</text>
+
+  <rect class="node tool" x="615" y="900" width="395" height="150"/>
+  <text class="text" x="812.5" y="928">工具 2：按条目编号读全文</text>
+  <text class="small" x="812.5" y="962">输入：LLM 选出的 Top-50 条目编号</text>
+  <text class="small" x="812.5" y="992">逻辑：定位对应切片，读取完整上下文</text>
+  <text class="small" x="812.5" y="1022">类似 v6b 的补充索引深挖</text>
+
+  <rect class="node merge" x="355" y="1120" width="500" height="86"/>
+  <text class="text" x="605" y="1148">合并去重</text>
+  <text class="small" x="605" y="1178">同文件 / 同切片 / 同行号附近只保留一次</text>
+
+  <rect class="node llm2" x="245" y="1310" width="720" height="155"/>
+  <text class="text" x="605" y="1340">第 3 步：第 2 次 LLM 生成终稿</text>
+  <text class="small" x="605" y="1376">输入：合并去重后的完整片段集合</text>
+  <text class="small" x="605" y="1406">输出：最终答案 + 明确依据</text>
+
+  <rect class="node llm2" x="425" y="1530" width="360" height="70"/>
+  <text class="text" x="605" y="1565">最终答案</text>
+
+  <path class="line" d="M605 240 L605 300"/>
+  <path class="line" d="M605 475 L605 555"/>
+  <path class="line" d="M605 740 L605 815"/>
+  <path class="thin" d="M397.5 1050 L397.5 1085 L605 1085 L605 1120"/>
+  <path class="thin" d="M812.5 1050 L812.5 1085 L605 1085 L605 1120"/>
+  <path class="line" d="M605 1206 L605 1310"/>
+  <path class="line" d="M605 1465 L605 1530"/>
+
+  <rect class="note" x="1005" y="330" width="300" height="118"/>
+  <text class="note-title" x="1035" y="360">Top-50 条目格式</text>
+  <text class="note-text" x="1035" y="390">- item_id</text>
+  <text class="note-text" x="1035" y="415">- 文件路径 / 起止行号</text>
+  <text class="note-text" x="1035" y="440">- 原文前 50 字预览</text>
+  <path class="thin" d="M965 388 L1005 388"/>
+
+  <rect class="note" x="1005" y="585" width="300" height="130"/>
+  <text class="note-title" x="1035" y="615">第 1 次 LLM 不产终稿</text>
+  <text class="note-text" x="1035" y="645">只根据问题和预览判断方向</text>
+  <text class="note-text" x="1035" y="670">通过工具拿全文证据</text>
+  <text class="note-text" x="1035" y="695">避免凭 50 字直接回答</text>
+  <path class="thin" d="M965 650 L1005 650"/>
+
+  <rect class="note" x="1005" y="965" width="300" height="130"/>
+  <text class="note-title" x="1035" y="995">两个工具的来源</text>
+  <text class="note-text" x="1035" y="1025">工具 1：延续 v2a 文件内 BM25</text>
+  <text class="note-text" x="1035" y="1050">工具 2：借鉴 v6b 补充索引精读</text>
+  <text class="note-text" x="1035" y="1075">二者结果统一进入去重池</text>
+  <path class="thin" d="M1010 1030 L1005 1030"/>
+
+  <rect class="note" x="1005" y="1330" width="300" height="118"/>
+  <text class="note-title" x="1035" y="1360">第 2 次 LLM 只看全文</text>
+  <text class="note-text" x="1035" y="1390">不再看短预览做终稿</text>
+  <text class="note-text" x="1035" y="1415">直接综合完整证据输出</text>
+  <path class="thin" d="M965 1388 L1005 1388"/>
+
+  <rect class="section" x="1340" y="115" width="250" height="1530"/>
+  <text class="section-title" x="1375" y="145">核心特征</text>
+
+  <rect class="note" x="1365" y="190" width="200" height="100"/>
+  <text class="note-title" x="1390" y="220">预览来源</text>
+  <text class="note-text" x="1390" y="250">不让 LLM 写摘要</text>
+  <text class="note-text" x="1390" y="275">直接取原文前 50 字</text>
+
+  <rect class="note" x="1365" y="335" width="200" height="100"/>
+  <text class="note-title" x="1390" y="365">第一步</text>
+  <text class="note-text" x="1390" y="395">系统 BM25 全局召回</text>
+  <text class="note-text" x="1390" y="420">返回 Top-50 条目</text>
+
+  <rect class="note" x="1365" y="480" width="200" height="120"/>
+  <text class="note-title" x="1390" y="510">第二步</text>
+  <text class="note-text" x="1390" y="540">第 1 次 LLM 调工具</text>
+  <text class="note-text" x="1390" y="565">文件内 BM25</text>
+  <text class="note-text" x="1390" y="590">编号精读全文</text>
+
+  <rect class="note" x="1365" y="645" width="200" height="100"/>
+  <text class="note-title" x="1390" y="675">去重</text>
+  <text class="note-text" x="1390" y="705">同文件 / 同片段</text>
+  <text class="note-text" x="1390" y="730">统一证据池</text>
+
+  <rect class="note" x="1365" y="790" width="200" height="100"/>
+  <text class="note-title" x="1390" y="820">第三步</text>
+  <text class="note-text" x="1390" y="850">第 2 次 LLM</text>
+  <text class="note-text" x="1390" y="875">基于全文出终稿</text>
+
+  <rect class="note" x="1365" y="935" width="200" height="120"/>
+  <text class="note-title" x="1390" y="965">调用次数</text>
+  <text class="note-text" x="1390" y="995">仍是两次 LLM</text>
+  <text class="note-text" x="1390" y="1020">第 1 次选证据</text>
+  <text class="note-text" x="1390" y="1045">第 2 次写答案</text>
+
+  <rect class="note" x="1365" y="1100" width="200" height="120"/>
+  <text class="note-title" x="1390" y="1130">和 v6b 的关系</text>
+  <text class="note-text" x="1390" y="1160">不做多轮循环</text>
+  <text class="note-text" x="1390" y="1185">但保留补充索引式深挖</text>
+  <text class="note-text" x="1390" y="1210">速度优先</text>
+</svg>
