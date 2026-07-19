@@ -27,7 +27,7 @@ MODEL_CONFIG = {
     10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-plus', 'thinking': 'qwen'},
     11: {'base_url': 'http://127.0.0.1:8013/v1', 'api_key': 'GEMINI_API_KEY', 'model_name': 'gemini-3.1-pro', 'thinking': 'kimi'},
 }
-MODEL_NUM = 4
+MODEL_NUM = 8
 THINKING_ENABLED = False
 config = MODEL_CONFIG[MODEL_NUM]
 client = OpenAI(base_url=config['base_url'], api_key=os.getenv(config['api_key']))
@@ -383,8 +383,8 @@ def run_search(query: str, search_dir: str = "./texts", top_k: int = 10, context
 # ================= 主程序 =================
 if __name__ == "__main__":
     # 非流式模式（默认）板的最小厚度
-    # run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0)
-    run_search(query="筏板的最小厚度", search_dir="./specs", top_k=10, context_lines=0)
+    run_search(query="扩展基础的宽高比", search_dir="./specs", top_k=30, context_lines=0)
+    # run_search(query="筏板的最小厚度", search_dir="./specs", top_k=10, context_lines=0)
     # 流式模式示例
     # for chunk in run_search(query="独立基础的高宽比", search_dir="./specs", top_k=10, context_lines=0, stream=True):
     #     print(chunk, end='', flush=True)

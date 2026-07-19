@@ -41,12 +41,12 @@ MODEL_CONFIG = {
     12: {'base_url': 'https://apihub.agnes-ai.com/v1', 'api_key': 'AGNES_API_KEY', 'model_name': 'agnes-2.0-flash', 'thinking': 'kimi'},
 }
 
-MODEL_NUM = 12
+MODEL_NUM = 8
 THINKING_ENABLED = False
 CONTENT_LINES = 0
 GLOBAL_TOP_N = 30
 PREVIEW_CHARS = 50
-FILE_BM25_TOP_K = 10
+FILE_TOP_K = 15
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 config = MODEL_CONFIG[MODEL_NUM]
@@ -305,7 +305,7 @@ def _format_evidence_list(items: list) -> str:
     return "\n\n".join(blocks)
 
 
-def search_high_probability_files(query: str, target_files: list, search_dir: str = "./specs", top_k: int = FILE_BM25_TOP_K, stream: bool = False):
+def search_high_probability_files(query: str, target_files: list, search_dir: str = "./specs", file_top_k: int = FILE_TOP_K, stream: bool = False):
     """工具 1：在第 1 次 LLM 选出的高概率文件内做 BM25 召回。"""
     def _core():
         paths = _match_target_files(search_dir, target_files)
@@ -315,7 +315,7 @@ def search_high_probability_files(query: str, target_files: list, search_dir: st
         chunks = []
         for path in paths:
             chunks.extend(chunk_file(path, chunk_size=512, overlap=50))
-        top_items = _rank_bm25(chunks, query, int(top_k or FILE_BM25_TOP_K))
+        top_items = _rank_bm25(chunks, query, int(file_top_k or FILE_TOP_K))
         for item in top_items:
             item["source"] = "TOOL1_FILE_BM25"
         text = _format_evidence_list(top_items)
@@ -336,7 +336,6 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "target_files": {"type": "array", "items": {"type": "string"}, "description": "高概率文件名列表，可用文件名片段"},
-                    "top_k": {"type": "integer", "description": f"返回完整片段数量，默认{FILE_BM25_TOP_K}；超过该值会被系统截断"},
                 },
                 "required": ["target_files"],
             },
@@ -358,7 +357,7 @@ def build_selection_messages(query: str, preview_text: str, search_dir: str, pre
 
 你的任务：
 1. 根据用户问题和 Top-{preview_top_n} 预览，判断哪些文件最可能包含答案。
-2. 只调用 search_high_probability_files，在高概率文件范围内继续 BM25 召回完整片段；该工具会由系统自动使用原始用户问题，不需要你传 query。
+2. 只调用 search_high_probability_files，在高概率文件范围内继续 BM25 召回完整片段；该工具会由系统自动使用原始用户问题，不需要你传 query。工具参数只允许 target_files，不要携带 top_k、file_top_k 或任何额外字段。
 3. 本轮不要直接回答用户问题，只负责调用这个工具获取证据。
 
 注意：
@@ -395,7 +394,7 @@ def _safe_json_loads(raw: str) -> dict:
         return obj
 
 
-def _execute_tool_call(tool_call, query: str, search_dir: str, context_lines: int):
+def _execute_tool_call(tool_call, query: str, search_dir: str, context_lines: int, file_top_k: int):
     name = tool_call.function.name
     args = _safe_json_loads(tool_call.function.arguments)
     if name == "search_high_probability_files":
@@ -403,7 +402,7 @@ def _execute_tool_call(tool_call, query: str, search_dir: str, context_lines: in
             query,
             args.get("target_files", []),
             search_dir=search_dir,
-            top_k=min(int(args.get("top_k", FILE_BM25_TOP_K) or FILE_BM25_TOP_K), FILE_BM25_TOP_K),
+            file_top_k=file_top_k,
             stream=False,
         )
     else:
@@ -411,7 +410,7 @@ def _execute_tool_call(tool_call, query: str, search_dir: str, context_lines: in
     return {"role": "tool", "tool_call_id": tool_call.id, "content": text}, items, args
 
 
-def _fallback_evidence(query: str, search_dir: str, context_lines: int):
+def _fallback_evidence(query: str, search_dir: str, context_lines: int, file_top_k: int):
     """兜底策略：从 Top-N 预览中选择靠前文件，再执行文件内 BM25。"""
     top_files = []
     for item in PREVIEW_ITEM_CACHE.values():
@@ -419,7 +418,7 @@ def _fallback_evidence(query: str, search_dir: str, context_lines: int):
             top_files.append(item["filename"])
         if len(top_files) >= 3:
             break
-    file_items, _ = search_high_probability_files(query, top_files, search_dir=search_dir, top_k=FILE_BM25_TOP_K, stream=False)
+    file_items, _ = search_high_probability_files(query, top_files, search_dir=search_dir, file_top_k=file_top_k, stream=False)
     return file_items
 
 
@@ -427,7 +426,7 @@ def run_search(
     query: str,
     search_dir: str = "./specs",
     preview_top_n: int = GLOBAL_TOP_N,
-    file_top_k: int = FILE_BM25_TOP_K,
+    file_top_k: int = FILE_TOP_K,
     context_lines: int = CONTENT_LINES,
     stream: bool = False,
 ):
@@ -460,7 +459,7 @@ def run_search(
         response = client.chat.completions.create(**first_kwargs)
         if not response or not response.choices:
             yield from _emit(stream, "⚠️ 第1次 LLM 返回空响应，启用本地兜底证据选择")
-            evidence_items = _fallback_evidence(query, search_dir, context_lines)
+            evidence_items = _fallback_evidence(query, search_dir, context_lines, file_top_k)
         else:
             first_msg = response.choices[0].message
             evidence_items, tool_messages = None, []
@@ -468,12 +467,12 @@ def run_search(
                 if tool_call.function.name != "search_high_probability_files":
                     continue
                 yield from _emit(stream, f"📝 工具调用: {tool_call.function.name} {tool_call.function.arguments}")
-                tool_msg, items, _ = _execute_tool_call(tool_call, query, search_dir, context_lines)
+                tool_msg, items, _ = _execute_tool_call(tool_call, query, search_dir, context_lines, file_top_k)
                 tool_messages.append(tool_msg)
                 evidence_items = items
             if evidence_items is None:
                 yield from _emit(stream, "⚠️ 第1次 LLM 未调用文件 BM25 工具，启用本地兜底证据选择")
-                evidence_items = _fallback_evidence(query, search_dir, context_lines)
+                evidence_items = _fallback_evidence(query, search_dir, context_lines, file_top_k)
 
         format_t0 = time.perf_counter()
         if file_top_k and len(evidence_items) > file_top_k:
@@ -507,9 +506,15 @@ def run_search(
 
 
 if __name__ == "__main__":
-    run_search(query="独立基础的宽高比", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
+    run_search(query="扩展基础的宽高比", search_dir="./specs", preview_top_n=30, file_top_k=15, context_lines=0)
     # run_search(query="筏板的最小厚度", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
     # run_search(query="门刚何时采用拦风绳", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
+
+
+
+
+
+
 
 
 

@@ -529,7 +529,7 @@ async def _run_fast_v2c_evidence(ws: WebSocket, question: str, thinking_id: str 
     search_dir = str(rg_search_v6b.TARGET)
     preview_top_n = getattr(rg_fast, "GLOBAL_TOP_N", 30)
     preview_chars = getattr(rg_fast, "PREVIEW_CHARS", 50)
-    file_top_k = getattr(rg_fast, "FILE_BM25_TOP_K", 10)
+    file_top_k = rg_fast.FILE_TOP_K
     context_lines = rg_search_v6b.CONTENT_LINES
 
     preview_step_id = "fast-global-bm25-preview"
@@ -554,16 +554,12 @@ async def _run_fast_v2c_evidence(ws: WebSocket, question: str, thinking_id: str 
         async def run_fast_tool(name, args):
             if name != "search_high_probability_files":
                 return None
-            try:
-                top_k = min(int(args.get("top_k", file_top_k) or file_top_k), file_top_k)
-            except (TypeError, ValueError):
-                top_k = file_top_k
             items, text = await asyncio.to_thread(
                 rg_fast.search_high_probability_files,
                 question,
                 args.get("target_files", []),
                 search_dir=search_dir,
-                top_k=top_k,
+                file_top_k=file_top_k,
                 stream=False,
             )
             evidence_groups.append(items)
@@ -577,7 +573,7 @@ async def _run_fast_v2c_evidence(ws: WebSocket, question: str, thinking_id: str 
         evidence_items = evidence_groups[-1]
     else:
         await _safe_send_json(ws, {"type": "tool_call", "data": {"tool_call_id": "fast-fallback-evidence", "tool_name": "fallback_evidence", "arguments": {"reason": "第1次 LLM 未调用文件 BM25 工具"}}})
-        evidence_items = await asyncio.to_thread(rg_fast._fallback_evidence, question, search_dir, context_lines)
+        evidence_items = await asyncio.to_thread(rg_fast._fallback_evidence, question, search_dir, context_lines, file_top_k)
         await _safe_send_json(ws, {"type": "tool_result", "data": {"tool_call_id": "fast-fallback-evidence", "summary": f"已启用兜底证据选择，返回 {len(evidence_items)} 条"}})
 
     if file_top_k and len(evidence_items) > file_top_k:
@@ -620,8 +616,8 @@ async def _handle_hybrid(ws: WebSocket, question: str, extract_refs: bool = True
             hybrid_search.evaluate_completeness,
             question,
             eval_text,
-            get_client(),
-            rg_search_v6b.MODEL_NAME,
+            rg_fast.client,
+            rg_fast.model_name,
         )
 
         if is_complete:

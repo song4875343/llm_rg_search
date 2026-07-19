@@ -76,7 +76,7 @@ def evaluate_completeness(query: str, fast_result: str, client, model_name: str)
 def collect_fast_v2c_evidence(query: str, search_dir: str = "./specs", preview_top_n: int | None = None, file_top_k: int | None = None, context_lines: int | None = None):
     """执行 fast v2c 的前两步，返回预览文本和完整证据文本。"""
     preview_top_n = preview_top_n or fast_search.GLOBAL_TOP_N
-    file_top_k = file_top_k or fast_search.FILE_BM25_TOP_K
+    file_top_k = fast_search.FILE_TOP_K if file_top_k is None else file_top_k
     context_lines = fast_search.CONTENT_LINES if context_lines is None else context_lines
 
     preview_items, preview_text = fast_search.global_bm25_preview(
@@ -103,19 +103,18 @@ def collect_fast_v2c_evidence(query: str, search_dir: str = "./specs", preview_t
             if tool_call.function.name != "search_high_probability_files":
                 continue
             args = _safe_json_loads(tool_call.function.arguments)
-            top_k = min(int(args.get("top_k", file_top_k) or file_top_k), file_top_k)
             items, text = fast_search.search_high_probability_files(
                 query,
                 args.get("target_files", []),
                 search_dir=search_dir,
-                top_k=top_k,
+                file_top_k=file_top_k,
                 stream=False,
             )
             evidence_items = items
             tool_logs.append({"tool_call": tool_call, "args": args, "content": text})
 
     if evidence_items is None:
-        evidence_items = fast_search._fallback_evidence(query, search_dir, context_lines)
+        evidence_items = fast_search._fallback_evidence(query, search_dir, context_lines, file_top_k)
 
     if file_top_k and len(evidence_items) > file_top_k:
         evidence_items = evidence_items[:file_top_k]
@@ -182,6 +181,6 @@ def hybrid_search(query: str, search_dir: str = "./specs", stream: bool = False)
 
 
 if __name__ == "__main__":
-    query = "门式刚架何时采用缆风绳"
+    query = "筏板的最小厚度"
     for chunk in hybrid_search(query, search_dir="./specs", stream=True):
         print(chunk, end="", flush=True)
