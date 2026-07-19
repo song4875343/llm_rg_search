@@ -43,7 +43,7 @@ MODEL_CONFIG = {
     12: {'base_url': 'https://apihub.agnes-ai.com/v1', 'api_key': 'AGNES_API_KEY', 'model_name': 'agnes-2.0-flash', 'thinking': 'kimi'},
 }
 
-MODEL_NUM = 8
+MODEL_NUM = 4
 THINKING_ENABLED = False
 CONTENT_LINES = 0
 GLOBAL_TOP_N = 30

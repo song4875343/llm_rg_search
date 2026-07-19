@@ -1,4 +1,4 @@
-"""
+﻿"""
 混合检索系统 - 先快速检索，信息不足时再深度搜索
 流程：fast第1轮(搜索) -> 评估 -> 够:生成答案 / 不够:转agent
 """
@@ -43,6 +43,7 @@ def evaluate_completeness(query: str, fast_result: str, client, model_name: str)
     
     try:
         # 针对不同模型优化参数
+        model_lower = model_name.lower()
         eval_kwargs = {
             "model": model_name,
             "messages": messages,
@@ -51,9 +52,15 @@ def evaluate_completeness(query: str, fast_result: str, client, model_name: str)
         }
         
         # 如果是 qwen 模型，禁用思考模式加速
-        if 'qwen' in model_name.lower():
-            eval_kwargs['extra_body'] = {'enable_thinking': False}
-        
+        if "kimi" in model_lower:
+            eval_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+            eval_kwargs["temperature"] = 0.6
+        elif "qwen" in model_lower:
+            eval_kwargs["extra_body"] = {"enable_thinking": False}
+        elif "deepseek" in model_lower:
+            eval_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+
+
         response = client.chat.completions.create(**eval_kwargs)
         answer = response.choices[0].message.content.strip().upper()
         result = "YES" in answer

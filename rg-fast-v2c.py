@@ -41,7 +41,7 @@ MODEL_CONFIG = {
     12: {'base_url': 'https://apihub.agnes-ai.com/v1', 'api_key': 'AGNES_API_KEY', 'model_name': 'agnes-2.0-flash', 'thinking': 'kimi'},
 }
 
-MODEL_NUM = 8
+MODEL_NUM = 12
 THINKING_ENABLED = False
 CONTENT_LINES = 0
 GLOBAL_TOP_N = 30
@@ -507,8 +507,8 @@ def run_search(
 
 
 if __name__ == "__main__":
-    # run_search(query="独立基础的高宽比", search_dir="./specs", preview_top_n=50, file_top_k=20, context_lines=0)
-    run_search(query="筏板的最小厚度", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
+    run_search(query="独立基础的宽高比", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
+    # run_search(query="筏板的最小厚度", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
     # run_search(query="门刚何时采用拦风绳", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
 
 
