@@ -1,4 +1,4 @@
-﻿"""
+"""
 BM25 两步检索 Agent。
 
 流程：
@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from bm25_module import BM25
+from model_config import MODEL_CONFIG
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -28,20 +29,6 @@ if hasattr(sys.stdout, "reconfigure"):
 load_dotenv()
 
 # ===== 模型配置 =====
-MODEL_CONFIG = {
-    1: {'base_url': 'https://api.moonshot.cn/v1', 'api_key': 'kimi_key', 'model_name': 'kimi-k2.5', 'thinking': 'kimi'},
-    2: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'z-ai/glm-5.2'},
-    3: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-235B-A22B-Instruct-2507', 'thinking': 'qwen'},
-    4: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3.5-27B', 'thinking': 'qwen'},
-    5: {'base_url': 'https://api-inference.modelscope.cn/v1', 'api_key': 'modelscope_key', 'model_name': 'Qwen/Qwen3-30B-A3B-Instruct-2507', 'thinking': 'qwen'},
-    6: {'base_url': 'https://ollama.com/v1', 'api_key': 'ollama_key', 'model_name': 'gemma4:31b-cloud'},
-    7: {'base_url': 'https://integrate.api.nvidia.com/v1', 'api_key': 'nvidia_key', 'model_name': 'qwen/qwen3.5-397b-a17b'},
-    8: {'base_url': 'https://api.deepseek.com/v1', 'api_key': 'deepseek_key', 'model_name': 'deepseek-v4-flash', 'thinking': 'deepseek'},
-    9: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.7-plus', 'thinking': 'qwen'},
-    10: {'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'api_key': 'DASHSCOPE_API_KEY', 'model_name': 'qwen3.6-35b-a3b', 'thinking': 'qwen'},
-    11: {'base_url': 'http://127.0.0.1:8013/v1', 'api_key': 'GEMINI_API_KEY', 'model_name': 'gemini-3.1-pro', 'thinking': 'kimi'},
-    12: {'base_url': 'https://apihub.agnes-ai.com/v1', 'api_key': 'AGNES_API_KEY', 'model_name': 'agnes-2.0-flash', 'thinking': 'kimi'},
-}
 
 MODEL_NUM = 4
 THINKING_ENABLED = False
@@ -64,16 +51,37 @@ LAST_TIMINGS = {}
 def _thinking_caps(cfg=None):
     cfg = cfg or config
     kind, forced = cfg.get("thinking"), "thinking" in cfg["model_name"].lower()
-    return {"supported": bool(kind), "can_disable": bool(kind) and not forced, "forced": forced, "kind": kind}
+    return {
+        "supported": bool(kind),
+        "can_disable": bool(kind) and not forced,
+        "forced": forced,
+        "kind": kind,
+    }
 
 
-def build_chat_kwargs(messages, stream=False, tools=None, tool_choice=None, temperature=1, thinking_enabled_override=None):
+def build_chat_kwargs(
+    messages,
+    stream=False,
+    tools=None,
+    tool_choice=None,
+    temperature=1,
+    thinking_enabled_override=None,
+):
     caps = _thinking_caps()
-    thinking_enabled = THINKING_ENABLED if thinking_enabled_override is None else thinking_enabled_override
+    thinking_enabled = (
+        THINKING_ENABLED
+        if thinking_enabled_override is None
+        else thinking_enabled_override
+    )
     if caps["kind"] == "kimi" and caps["can_disable"] and not thinking_enabled:
         temperature = 0.6
 
-    kw = {"model": model_name, "messages": messages, "temperature": temperature, "stream": stream}
+    kw = {
+        "model": model_name,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": stream,
+    }
     if tools:
         # 这些版本的第 1 轮固定要调用工具，不再让模型自行判断是否用工具。
         kw.update(tools=tools, tool_choice=tool_choice or "required")
@@ -152,7 +160,10 @@ def chunk_file(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
             sentence = raw.strip()
             if not sentence:
                 continue
-            left_trim, right_trim = len(raw) - len(raw.lstrip()), len(raw) - len(raw.rstrip())
+            left_trim, right_trim = (
+                len(raw) - len(raw.lstrip()),
+                len(raw) - len(raw.rstrip()),
+            )
             start_pos, end_pos = match.start() + left_trim, match.end() - right_trim
             start_line = bisect.bisect_right(line_starts, start_pos)
             end_line = bisect.bisect_right(line_starts, end_pos)
@@ -196,7 +207,9 @@ def chunk_file(filepath: str, chunk_size: int = 512, overlap: int = 50) -> list:
     return chunks
 
 
-def _build_global_chunks(search_dir: str, chunk_size: int = 512, overlap: int = 50) -> list:
+def _build_global_chunks(
+    search_dir: str, chunk_size: int = 512, overlap: int = 50
+) -> list:
     root_dir = _as_search_dir(search_dir)
     cache_key = (root_dir, chunk_size, overlap)
     if cache_key in GLOBAL_CHUNK_CACHE:
@@ -205,7 +218,11 @@ def _build_global_chunks(search_dir: str, chunk_size: int = 512, overlap: int = 
     chunks = []
     for root, _, files in os.walk(root_dir):
         for filename in sorted(f for f in files if f.endswith((".txt", ".md"))):
-            chunks.extend(chunk_file(os.path.join(root, filename), chunk_size=chunk_size, overlap=overlap))
+            chunks.extend(
+                chunk_file(
+                    os.path.join(root, filename), chunk_size=chunk_size, overlap=overlap
+                )
+            )
     for idx, item in enumerate(chunks):
         item["global_id"] = f"G{idx + 1:06d}"
     GLOBAL_CHUNK_CACHE[cache_key] = chunks
@@ -261,7 +278,12 @@ def _format_preview_items(items: list) -> str:
     return "\n".join(lines)
 
 
-def global_bm25_preview(query: str, search_dir: str = "./specs", top_n: int = GLOBAL_TOP_N, preview_chars: int = PREVIEW_CHARS) -> tuple:
+def global_bm25_preview(
+    query: str,
+    search_dir: str = "./specs",
+    top_n: int = GLOBAL_TOP_N,
+    preview_chars: int = PREVIEW_CHARS,
+) -> tuple:
     global PREVIEW_ITEM_CACHE, LAST_TIMINGS
     t0 = time.perf_counter()
     chunks = _build_global_chunks(search_dir)
@@ -287,7 +309,9 @@ def global_bm25_preview(query: str, search_dir: str = "./specs", top_n: int = GL
 
 
 def _match_target_files(search_dir: str, target_files) -> list:
-    requested = [target_files] if isinstance(target_files, str) else list(target_files or [])
+    requested = (
+        [target_files] if isinstance(target_files, str) else list(target_files or [])
+    )
     root_dir = _as_search_dir(search_dir)
     all_paths = [
         os.path.join(root, f)
@@ -301,7 +325,11 @@ def _match_target_files(search_dir: str, target_files) -> list:
         if not req:
             continue
         for path in all_paths:
-            if req == os.path.basename(path) or req in os.path.basename(path) or req in path:
+            if (
+                req == os.path.basename(path)
+                or req in os.path.basename(path)
+                or req in path
+            ):
                 if path not in matches:
                     matches.append(path)
     return matches
@@ -328,11 +356,21 @@ def _format_evidence_list(items: list) -> str:
     return "\n\n".join(blocks)
 
 
-def search_high_probability_files(query: str, target_files: list, search_dir: str = "./specs", top_k: int = FILE_BM25_TOP_K, stream: bool = False):
+def search_high_probability_files(
+    query: str,
+    target_files: list,
+    search_dir: str = "./specs",
+    top_k: int = FILE_BM25_TOP_K,
+    stream: bool = False,
+):
     """工具 1：在第 1 次 LLM 选出的高概率文件内做 BM25 召回。"""
+
     def _core():
         paths = _match_target_files(search_dir, target_files)
-        yield from _emit(stream, f"🛠️ [工具1] 高概率文件 BM25: 请求={target_files}, 匹配文件={len(paths)}")
+        yield from _emit(
+            stream,
+            f"🛠️ [工具1] 高概率文件 BM25: 请求={target_files}, 匹配文件={len(paths)}",
+        )
         if not paths:
             return [], "系统反馈：未匹配到高概率文件。"
         chunks = []
@@ -342,8 +380,11 @@ def search_high_probability_files(query: str, target_files: list, search_dir: st
         for item in top_items:
             item["source"] = "TOOL1_FILE_BM25"
         text = _format_evidence_list(top_items)
-        yield from _emit(stream, f"✅ [工具1] 文件 chunks={len(chunks)}，返回 Top-{len(top_items)}")
+        yield from _emit(
+            stream, f"✅ [工具1] 文件 chunks={len(chunks)}，返回 Top-{len(top_items)}"
+        )
         return top_items, text
+
     if stream:
         return _core()
     return _consume_return(_core())
@@ -364,8 +405,11 @@ def _parse_preview_ids(item_ids) -> list:
     return ids
 
 
-def read_preview_items(item_ids, context_lines: int = CONTENT_LINES, stream: bool = False):
+def read_preview_items(
+    item_ids, context_lines: int = CONTENT_LINES, stream: bool = False
+):
     """工具 2：按第 1 次 LLM 选出的 Top-N 预览编号读取完整片段。"""
+
     def _core():
         ids = _parse_preview_ids(item_ids)
         yield from _emit(stream, f"🛠️ [工具2] 按 Top-N 条目编号读全文: {ids}")
@@ -383,14 +427,19 @@ def read_preview_items(item_ids, context_lines: int = CONTENT_LINES, stream: boo
             if int(context_lines or 0) > 0:
                 start = max(1, full_item["start_line"] - int(context_lines))
                 end = full_item["end_line"] + int(context_lines)
-                full_item["expanded_content"] = _read_line_range(full_item["file"], start, end)
+                full_item["expanded_content"] = _read_line_range(
+                    full_item["file"], start, end
+                )
                 full_item["start_line"], full_item["end_line"] = start, end
             items.append(full_item)
         text = _format_evidence_list(items)
         if missing:
             text += "\n\n系统反馈：未找到条目编号 " + ", ".join(missing)
-        yield from _emit(stream, f"✅ [工具2] 成功读取 {len(items)} 条，缺失 {len(missing)} 条")
+        yield from _emit(
+            stream, f"✅ [工具2] 成功读取 {len(items)} 条，缺失 {len(missing)} 条"
+        )
         return items, text
+
     if stream:
         return _core()
     return _consume_return(_core())
@@ -405,8 +454,15 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "target_files": {"type": "array", "items": {"type": "string"}, "description": "高概率文件名列表，可用文件名片段"},
-                    "top_k": {"type": "integer", "description": f"返回完整片段数量，默认{FILE_BM25_TOP_K}；超过该值会被系统截断"},
+                    "target_files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "高概率文件名列表，可用文件名片段",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": f"返回完整片段数量，默认{FILE_BM25_TOP_K}；超过该值会被系统截断",
+                    },
                 },
                 "required": ["target_files"],
             },
@@ -420,7 +476,11 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "item_ids": {"type": "array", "items": {"type": "string"}, "description": "预览条目编号，如 P001、P018"},
+                    "item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "预览条目编号，如 P001、P018",
+                    },
                 },
                 "required": ["item_ids"],
             },
@@ -429,14 +489,16 @@ TOOLS = [
 ]
 
 
-def build_selection_messages(query: str, preview_text: str, search_dir: str, preview_top_n: int = GLOBAL_TOP_N):
+def build_selection_messages(
+    query: str, preview_text: str, search_dir: str, preview_top_n: int = GLOBAL_TOP_N
+):
     return [
         {
             "role": "system",
             "content": f"""你是规范资料证据筛选专家。你现在处于严格两次 LLM 流程的第 1 次调用。
 
 可用文件列表：
-{', '.join(get_available_files(search_dir))}
+{", ".join(get_available_files(search_dir))}
 
 系统已经根据用户问题完成全局 BM25 Top-{preview_top_n} 召回。每条只含编号、文件、行号和原文前 {PREVIEW_CHARS} 字预览。
 
@@ -451,11 +513,16 @@ def build_selection_messages(query: str, preview_text: str, search_dir: str, pre
 - item_ids 必须使用 P001 这种 Top-{preview_top_n} 条目编号。
 - 必须同时调用两个工具：search_high_probability_files 和 read_preview_items；不要省略任一路。""",
         },
-        {"role": "user", "content": f"用户问题：{query}\n\nTop-{preview_top_n} 条目预览：\n{preview_text}"},
+        {
+            "role": "user",
+            "content": f"用户问题：{query}\n\nTop-{preview_top_n} 条目预览：\n{preview_text}",
+        },
     ]
 
 
-def build_final_messages(query: str, preview_text: str, evidence_text: str, preview_top_n: int = GLOBAL_TOP_N):
+def build_final_messages(
+    query: str, preview_text: str, evidence_text: str, preview_top_n: int = GLOBAL_TOP_N
+):
     return [
         {
             "role": "system",
@@ -489,7 +556,10 @@ def _execute_tool_call(tool_call, query: str, search_dir: str, context_lines: in
             query,
             args.get("target_files", []),
             search_dir=search_dir,
-            top_k=min(int(args.get("top_k", FILE_BM25_TOP_K) or FILE_BM25_TOP_K), FILE_BM25_TOP_K),
+            top_k=min(
+                int(args.get("top_k", FILE_BM25_TOP_K) or FILE_BM25_TOP_K),
+                FILE_BM25_TOP_K,
+            ),
             stream=False,
         )
     elif name == "read_preview_items":
@@ -506,14 +576,18 @@ def _execute_tool_call(tool_call, query: str, search_dir: str, context_lines: in
 def _fallback_evidence(query: str, search_dir: str, context_lines: int):
     """第 1 次 LLM 没有调用工具时，使用本地兜底证据选择，保证两次调用流程可继续。"""
     top_preview_ids = list(PREVIEW_ITEM_CACHE)[:8]
-    preview_items, _ = read_preview_items(top_preview_ids, context_lines=context_lines, stream=False)
+    preview_items, _ = read_preview_items(
+        top_preview_ids, context_lines=context_lines, stream=False
+    )
     top_files = []
     for item in PREVIEW_ITEM_CACHE.values():
         if item["filename"] not in top_files:
             top_files.append(item["filename"])
         if len(top_files) >= 3:
             break
-    file_items, _ = search_high_probability_files(query, top_files, search_dir=search_dir, top_k=FILE_BM25_TOP_K, stream=False)
+    file_items, _ = search_high_probability_files(
+        query, top_files, search_dir=search_dir, top_k=FILE_BM25_TOP_K, stream=False
+    )
     return merge_dedup_evidence(file_items, preview_items)
 
 
@@ -526,13 +600,22 @@ def run_search(
     stream: bool = False,
 ):
     """严格两次 LLM 调用的 BM25 检索流程。"""
+
     def _core():
         total_t0 = time.perf_counter()
         yield from _emit(stream, f"\n{'=' * 60}\n🚀 问题: {query}\n{'=' * 60}")
 
         step1_t0 = time.perf_counter()
-        yield from _emit(stream, f"\n[系统步骤] 全局 BM25 召回 Top-{preview_top_n}，并返回前 {PREVIEW_CHARS} 字预览...")
-        preview_items, preview_text = global_bm25_preview(query, search_dir=search_dir, top_n=preview_top_n, preview_chars=PREVIEW_CHARS)
+        yield from _emit(
+            stream,
+            f"\n[系统步骤] 全局 BM25 召回 Top-{preview_top_n}，并返回前 {PREVIEW_CHARS} 字预览...",
+        )
+        preview_items, preview_text = global_bm25_preview(
+            query,
+            search_dir=search_dir,
+            top_n=preview_top_n,
+            preview_chars=PREVIEW_CHARS,
+        )
         step1_elapsed = time.perf_counter() - step1_t0
         gt = LAST_TIMINGS.get("global_preview", {})
         yield from _emit(
@@ -542,8 +625,13 @@ def run_search(
         )
 
         step2_t0 = time.perf_counter()
-        yield from _emit(stream, f"\n[第1次 LLM] 根据用户问题和 Top-{preview_top_n} 预览调用证据工具...")
-        selection_messages = build_selection_messages(query, preview_text, search_dir, preview_top_n=preview_top_n)
+        yield from _emit(
+            stream,
+            f"\n[第1次 LLM] 根据用户问题和 Top-{preview_top_n} 预览调用证据工具...",
+        )
+        selection_messages = build_selection_messages(
+            query, preview_text, search_dir, preview_top_n=preview_top_n
+        )
         first_kwargs = build_chat_kwargs(
             selection_messages,
             tools=TOOLS,
@@ -559,14 +647,24 @@ def run_search(
             first_msg = response.choices[0].message
             evidence_groups, tool_messages = [], []
             for tool_call in first_msg.tool_calls or []:
-                if tool_call.function.name not in {"search_high_probability_files", "read_preview_items"}:
+                if tool_call.function.name not in {
+                    "search_high_probability_files",
+                    "read_preview_items",
+                }:
                     continue
-                yield from _emit(stream, f"📝 工具调用: {tool_call.function.name} {tool_call.function.arguments}")
-                tool_msg, items, _ = _execute_tool_call(tool_call, query, search_dir, context_lines)
+                yield from _emit(
+                    stream,
+                    f"📝 工具调用: {tool_call.function.name} {tool_call.function.arguments}",
+                )
+                tool_msg, items, _ = _execute_tool_call(
+                    tool_call, query, search_dir, context_lines
+                )
                 tool_messages.append(tool_msg)
                 evidence_groups.append(items)
             if not evidence_groups:
-                yield from _emit(stream, "⚠️ 第1次 LLM 未调用证据工具，启用本地兜底证据选择")
+                yield from _emit(
+                    stream, "⚠️ 第1次 LLM 未调用证据工具，启用本地兜底证据选择"
+                )
                 evidence_items = _fallback_evidence(query, search_dir, context_lines)
             else:
                 evidence_items = merge_dedup_evidence(*evidence_groups)
@@ -578,12 +676,24 @@ def run_search(
         merge_elapsed = time.perf_counter() - merge_t0
         step2_elapsed = time.perf_counter() - step2_t0
         yield from _emit(stream, f"✅ 合并去重后完整证据: {len(evidence_items)} 条")
-        yield from _emit(stream, f"⏱️ [第2步耗时] 总计 {step2_elapsed:.3f}s | 证据格式化/截断 {merge_elapsed:.3f}s")
+        yield from _emit(
+            stream,
+            f"⏱️ [第2步耗时] 总计 {step2_elapsed:.3f}s | 证据格式化/截断 {merge_elapsed:.3f}s",
+        )
 
         step3_t0 = time.perf_counter()
         yield from _emit(stream, "\n[第2次 LLM] 基于完整证据生成终稿...")
-        final_messages = build_final_messages(query, preview_text, evidence_text, preview_top_n=preview_top_n)
-        final_response = client.chat.completions.create(**build_chat_kwargs(final_messages, stream=stream, temperature=1, thinking_enabled_override=False))
+        final_messages = build_final_messages(
+            query, preview_text, evidence_text, preview_top_n=preview_top_n
+        )
+        final_response = client.chat.completions.create(
+            **build_chat_kwargs(
+                final_messages,
+                stream=stream,
+                temperature=1,
+                thinking_enabled_override=False,
+            )
+        )
         if stream:
             for chunk in final_response:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -591,7 +701,12 @@ def run_search(
         else:
             if final_response and final_response.choices:
                 answer = final_response.choices[0].message.content
-                yield from _emit(stream, "⚠️ 第2次 LLM 返回空答案！" if not answer else f"\n{'=' * 60}\n✅ 最终答案:\n{'=' * 60}\n{answer}\n{'=' * 60}")
+                yield from _emit(
+                    stream,
+                    "⚠️ 第2次 LLM 返回空答案！"
+                    if not answer
+                    else f"\n{'=' * 60}\n✅ 最终答案:\n{'=' * 60}\n{answer}\n{'=' * 60}",
+                )
             else:
                 yield from _emit(stream, "⚠️ 第2次 LLM 返回空响应")
         step3_elapsed = time.perf_counter() - step3_t0
@@ -604,18 +719,11 @@ def run_search(
 
 if __name__ == "__main__":
     # run_search(query="独立基础的高宽比", search_dir="./specs", preview_top_n=50, file_top_k=20, context_lines=0)
-    run_search(query="筏板的最小厚度", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
+    run_search(
+        query="筏板的最小厚度",
+        search_dir="./specs",
+        preview_top_n=30,
+        file_top_k=10,
+        context_lines=0,
+    )
     # run_search(query="门刚何时采用拦风绳", search_dir="./specs", preview_top_n=30, file_top_k=10, context_lines=0)
-
-
-
-
-
-
-
-
-
-
-
-
-
