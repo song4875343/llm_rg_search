@@ -1,4 +1,4 @@
-# ==================== 导入与初始化 ====================
+﻿# ==================== 导入与初始化 ====================
 import subprocess, json, os, sys, re
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -15,7 +15,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 # ==================== 配置与全局变量 ====================
-num = 1  # 选择的模型序号
+num = 11  # 选择的模型序号
 MODEL_NAME = MODEL_DICT[num]["model_name"]
 CONTENT_LINES = 10
 THINKING_ENABLED = False

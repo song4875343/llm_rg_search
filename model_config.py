@@ -59,9 +59,9 @@ MODEL_CONFIG = {
         "thinking": "qwen",
     },
     11: {
-        "base_url": "http://127.0.0.1:8013/v1",
+        "base_url": "http://127.0.0.1:4000/v1",
         "api_key": "GEMINI_API_KEY",
-        "model_name": "gemini-3.1-pro",
+        "model_name": "gemini-3.5-flash-lite",
         "thinking": "kimi",
     },
     12: {

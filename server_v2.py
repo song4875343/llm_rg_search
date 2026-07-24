@@ -149,9 +149,7 @@ async def _chat_stream(ws: WebSocket, messages, tools=None, thinking_id=None, st
     return {"role": "assistant", "content": full_content or None, "tool_calls": [tool_calls[i] for i in sorted(tool_calls)] or None, "reasoning_content": full_reasoning or None}
 
 
-async def _stream_final_answer(ws: WebSocket, messages, thinking_id="thinking-final", extract_refs=True):
-    final = await _chat_stream(ws, messages, thinking_id=thinking_id)
-    final_content = final.get("content")
+async def _finish_final_answer(ws: WebSocket, messages, final_content, extract_refs=True):
     await _safe_send_json(ws, {"type": "final_answer", "data": {"content": final_content}})
     
     if extract_refs and final_content:
@@ -161,6 +159,11 @@ async def _stream_final_answer(ws: WebSocket, messages, thinking_id="thinking-fi
             await _safe_send_json(ws, {"type": "references", "data": refs})
     
     await _safe_close(ws)
+
+
+async def _stream_final_answer(ws: WebSocket, messages, thinking_id="thinking-final", extract_refs=True):
+    final = await _chat_stream(ws, messages, thinking_id=thinking_id)
+    await _finish_final_answer(ws, messages, final.get("content"), extract_refs)
 
 
 # ==================== 工具调用 ====================
@@ -503,7 +506,9 @@ async def _run_agentic_loop(ws: WebSocket, question: str, extract_refs: bool = T
 
         if not msg.get("tool_calls"):
             print("✅ [最终答案] 流式输出中...")
-            return await _stream_final_answer(ws, messages, extract_refs=extract_refs)
+            return await _finish_final_answer(
+                ws, messages[:-1], msg.get("content"), extract_refs
+            )
 
         tool_msgs = await _exec_tools(
             ws,
