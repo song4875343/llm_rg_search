@@ -841,4 +841,5 @@ def run_agent(user_question, show_reasoning=False, stream=False, extract_refs=Tr
 # ==================== 程序入口 ====================
 if __name__ == "__main__":
     # run_agent("高烈度区能否用砌体女儿墙")
-    run_agent("门刚何时应采用揽风绳")
+    # run_agent("门刚何时应采用揽风绳")
+    run_agent("扩展基础的宽高比")

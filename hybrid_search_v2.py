@@ -181,6 +181,6 @@ def hybrid_search(query: str, search_dir: str = "./specs", stream: bool = False)
 
 
 if __name__ == "__main__":
-    query = "筏板的最小厚度"
+    query = "扩展基础的长细比"
     for chunk in hybrid_search(query, search_dir="./specs", stream=True):
         print(chunk, end="", flush=True)

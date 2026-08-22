@@ -21,7 +21,7 @@ MODEL_CONFIG = {
     4: {
         "base_url": "https://api-inference.modelscope.cn/v1",
         "api_key": "modelscope_key",
-        "model_name": "Qwen/Qwen3.5-27B",
+        "model_name": "Qwen/Qwen3.8-27B",
         "thinking": "qwen",
     },
     5: {

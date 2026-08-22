@@ -1,16 +1,16 @@
 ﻿# Agentic 本地知识库搜索工具
 
-基于 ripgrep 和大语言模型的智能文本检索系统，专为工程规范查询优化。
+基于 ripgrep、BM25 和大语言模型的工程规范智能检索系统。支持多轮 Agentic 深度检索、两轮式 BM25 快速检索、以及"快检 + 评估 + 深挖"的混合检索三种模式，并提供 Web 服务与前端界面。
 
 ## ✨ 核心特性
 
-- 🚀 **毫秒级检索**：使用 ripgrep 实现超快全文搜索，速度媲美向量数据库但无需预处理
-- 🤖 **原生 Agent 架构**（V5 推荐）：基于 ReAct 范式，大模型自主调度工具，零人工规则干预
-- 🗂️ **目录增强实验**（V6）：预加载总目录索引，并按需读取单文件详细目录
-- 🎯 **智能目录路由**（agentic_search）：通过目录树直接定位章节，自动配对条文解释
-- 💰 **极低成本**：V5 通过文件目录零成本初筛，相比 V4 打分制降低 70% Token 消耗
-- 🔗 **多轮推理**：自动检测外部引用（表格、条文跳转），迭代搜索直到信息完整
-- 💬 **实时反馈**：流式输出 AI 分析过程，透明展示推理路径
+- 🚀 **Agentic 多轮检索**（`rg_search_v6a/v6b`）：全局目录注入上下文，大模型自主调度 grep / 读目录 / 读原文工具，多轮迭代直到证据充分
+- 🔎 **补充扫描防遗漏**（v6b）：限定文件搜索命中后自动扫描其余文件，生成 `S001` 补充索引供模型批量精读
+- ⚡ **BM25 快速检索**（`rg-fast-v2a/v2b/v2c`）：系统先做全局 BM25 Top-N 短预览召回，LLM 只需选文件/选编号，两次 LLM 调用出答案
+- 🔀 **混合检索**（`hybrid_search(_v2)`）：先走快速检索，LLM 评估证据是否足够——够则直接作答，不够自动转深度 Agent
+- 🗂️ **TOC 目录索引**（`extract_toc`）：自动生成全局目录和单文件详细章节目录，搜索结果自动注入章节出处
+- 📚 **回答依据抽取**：最终答案后额外调用模型提取"文件名 + 行号 + 条文号"结构化依据
+- 💬 **Web 服务**：FastAPI + WebSocket 流式输出（思考过程、工具调用、回答分事件推送），内置历史记录与相似问题匹配
 
 ---
 
@@ -18,322 +18,182 @@
 
 ### 1. 环境要求
 
-- Python 3.8+
+- Python 3.11+（仓库提供 `.python-version` 与 `uv.lock`）
 - ripgrep（Windows 用户使用项目自带的 `rg.exe`）
 
 ### 2. 安装依赖
 
 ```bash
-pip install openai python-dotenv
+pip install openai python-dotenv fastapi "uvicorn[standard]"
 ```
 
-或使用 uv（推荐）：
+或使用 uv：
 
 ```bash
-uv pip install openai python-dotenv
+uv sync
 ```
 
 ### 3. 配置 API Key
 
-复制 `.env.example` 为 `.env`，填入你的 API Key：
+复制 `.env.example` 为 `.env`，按 `model_config.py` 中所用模型的 `api_key` 字段填入对应环境变量：
 
 ```env
-MODELSCOPE_API_KEY=your-api-key-here
+kimi_key=your-api-key
+deepseek_key=your-api-key
+DASHSCOPE_API_KEY=your-api-key
+...
 ```
 
 ### 4. 准备规范文件
 
-将文本文件（.txt 格式）放入 `specs/` 文件夹。
+将 `.txt` / `.md` 文件放入 `specs/` 文件夹（默认资料库）。首次运行会通过 `extract_toc` 自动在 `specs/.index/` 生成目录索引。
 
 ### 5. 运行
 
 ```bash
-# V5 原生 Agent 版本（强烈推荐）
-python rg_search_v5.py
+# Web 服务 v2 栈（推荐）：agentic=v6b / fast=v2c / hybrid=混合检索 v2
+python server_v2.py
 
-# 有目录文件时使用
-python agentic_search.py
+# Web 服务 v1 栈：agentic=v6a / fast=v2a / hybrid=混合检索 v1
+python server.py
+
+# 命令行直接运行某个版本
+python rg_search_v6b.py
+python rg-fast-v2c.py
+python hybrid_search_v2.py
 ```
+
+浏览器访问：
+
+| 地址 | 前端页面 |
+|---|---|
+| http://localhost:5000 | `index3.html`（默认版） |
+| http://localhost:5000/v1 | `index.html` |
+| http://localhost:5000/v2 | `index2.html` |
 
 ---
 
-## 🎯 版本选择指南
+## 🏗️ 架构总览
 
-### 推荐版本
+项目当前由**两条并行技术栈**组成，每条栈包含一个 Agentic 检索器、一个 BM25 快速检索器和对应的 Web 服务：
 
-| 版本 | 文件 | 适用场景 | 核心优势 |
-|------|------|---------|---------|
-| **V5** 🚀 | `rg_search_v5.py` | 所有查询（当前默认推荐） | 原生 Agent，大模型自主调度，整体最稳 |
-| **V6** 🗂️ | `rg_search_v6.py` | 已有 TOC 索引、希望辅助章节定位 | 章节上下文注入 + 智能消重，相比 V5 提升约 10% |
-| **V6a** ⚡ | `rg_search_v6a.py` | V6 的精简等效版 | 代码极简，功能与 V6 完全等效 |
-| **Fast v2** 🏃 | `rg-fast.py` | 快速查询、资源受限场景 | 速度快数倍，准确度达 agentic_search 的 90%，强容错 |
-| **agentic_search** 📚 | `agentic_search.py` | 有目录结构的规范文档 | 目录路由 + 自动配对条文解释 |
-| **V2** 📖 | `rg_search_v2.py` | 通用文本库，简单查询 | 无需目录，智能初筛 |
+| 组件 | v1 栈 | v2 栈（当前主力） |
+|---|---|---|
+| Web 服务 | `server.py` | `server_v2.py` |
+| Agentic 深度检索 | `rg_search_v6a.py` | `rg_search_v6b.py`（增加补充扫描） |
+| BM25 快速检索 | `rg-fast-v2a.py`（RG+chunk 双路） | `rg-fast-v2c.py`（全局预览+文件内 BM25，另存实验版 `rg-fast-v2b.py`） |
+| 混合检索 | `hybrid_search.py` | `hybrid_search_v2.py` |
 
-### 快速决策树
-
-```
-是否有完整目录文件（menu.json）？
-├─ 是 → agentic_search（章节定位最精准）
-└─ 否 → 是否需要快速响应？
-    ├─ 是 → rg-fast v2（速度优先，准确度 90%，强容错）
-    └─ 否 → 是否想实验 TOC 预加载方案？
-        ├─ 是 → V6/V6a（相比 V5 稳健提升 10%）
-        └─ 否 → 模型是否支持 Function Calling？
-            ├─ 是 → V5（当前默认推荐）
-            └─ 否 → V2（通用兼容）
-```
+历史版本（V1–V5 等）已移入 `old_vsion/`。
 
 ---
 
-## 🔧 使用方法
+## 🎯 检索模式详解
 
-### V5 - 原生 Agent 版本（推荐）
+### Agentic 模式 —— rg_search_v6a / v6b
 
-**运行：**
-```bash
-python rg_search_v5.py
-```
+多轮 Agent 主循环（最多 15 轮）：system prompt 注入资料库全局目录，模型自主调用工具收集证据，不再请求工具时生成最终答案并抽取依据。
 
-**自定义查询：**
-```python
-run_agent("钢柱的长细比要求")
-```
+**工具集：**
 
-**特点：**
-- 大模型自主决定搜索策略
-- 自动文件过滤（零成本）
-- 自动翻页阅读上下文
-- 支持多轮迭代推理
+| 工具 | 说明 |
+|---|---|
+| `execute_grep` | 调用 `rg -n -i -H -C{N} -m50` 搜索，结果带章节注解并按 `(文件, 行号)` 去重，只展开前 20 条新记录 |
+| `get_document_toc` | 读取单文件详细章节目录（`.index/{stem}.index.json`） |
+| `read_file_range` | 按行范围读取原文 |
+| `fetch_supplemental`（仅 v6b） | 按 `S001,S003` 编号批量精读补充扫描命中的原文上下文 |
 
-### V6 - TOC 预加载实验版本
+**v6b 的补充扫描机制**：当模型用 `include_files` 限定了高概率文件且其中有命中时，系统自动用轻量命令（无 `-C`、每文件 `-m12`、上限 30 条）扫描其余文件，返回关键词居中短预览的补充索引。模型可继续调用 `fetch_supplemental` 批量精读，避免"找到一处就早退"漏掉其他规范的相关条文。
 
-**前提条件：** 文档可通过 `extract_toc` 生成 `index.json` 和单文件详细目录
+详细运行逻辑见 [`优化逻辑.md`](优化逻辑.md) 及流程图 [`v6b_flow.svg`](v6b_flow.svg)。
 
-**运行：**
-```bash
-python rg_search_v6.py
-```
+### Fast 模式 —— rg-fast 系列
 
-**特点：**
-- 启动前自动检查并生成目录索引
-- 将总目录 `index.json` 直接注入上下文
-- 提供单文件详细目录工具，便于按章按节阅读
-- 章节上下文注入 + 智能消重机制
-- **性能评估**：相较 V5，稳健提升约 10%，虽非根本性突破但更加可靠
+**共同设计**：BM25 预筛选 + 固定两次 LLM 调用。系统先把全库按句子边界切成 ~512 字 chunks 并做全局 BM25 召回 Top-N，只向 LLM 暴露"编号 + 文件 + 行号 + 前 50 字预览"；第 1 次 LLM 只负责选择挖掘方向并调用本地工具获取完整片段；第 2 次 LLM 基于完整证据生成终稿。
 
-### V6a - V6 精简等效版本
+| 版本 | 初筛 | 第 1 次 LLM 的工具 | 特点 |
+|---|---|---|---|
+| `rg-fast-v2a.py` | 无（直接让 LLM 出关键词） | `search_documents`：RG 关键词搜索 + 目标文件切片 BM25 双路召回，关键词加分（精确命中 +1.0；宽泛命中 2 个 +0.5、≥3 个 +1.0）后 BM25/修正双榜融合排序去重 | 单工具单轮，经典双路方案 |
+| `rg-fast-v2b.py` | 全局 BM25 Top-N 预览 | `search_high_probability_files`（文件内 BM25）+ `read_preview_items`（按 P001 编号精读预览条目） | 双工具互补，证据合并去重 |
+| `rg-fast-v2c.py` | 全局 BM25 Top-N 预览 | 仅 `search_high_probability_files`（文件内 BM25，Top-K 完整片段） | 单工具最短路径，速度最快 |
 
-**运行：**
-```bash
-python rg_search_v6a.py
-```
+实践结论（详见 [`优化逻辑.md`](优化逻辑.md) §19–22）：v2b 与 v2c 效果接近，"按编号精读"的工具边际收益有限；两者共同的局限是 BM25 预筛可能因术语不一致而漏召，无法像 Agentic 模式那样自主换词扩展。流程图见 [`v2a_bm25_two_step_flow.svg`](v2a_bm25_two_step_flow.svg)、[`v2c_bm25_file_only_flow.svg`](v2c_bm25_file_only_flow.svg)。
 
-**特点：**
-- V6 的等效版本，功能完全相同
-- 代码极为精简，便于理解和维护
-- 性能与 V6 完全一致
+### Hybrid 模式 —— hybrid_search / hybrid_search_v2
 
-### Fast - 快速检索版本 (v2)
+三阶段流水线，兼顾速度与召回率：
 
-**运行：**
-```bash
-python rg-fast.py
-```
-
-**特点：**
-- 基于 LLM Function Call + BM25 排序
-- 两步流程：生成关键词 + RG 搜索 → 生成答案
-- **v2 重大改进**：
-  1. 智能文件定位：LLM 预判最可能包含答案的文件，对这些文件进行切片处理
-  2. 双路召回策略：RG 关键词搜索 + 文件切片 BM25 排序，完美避免关键词错写/简写问题
-  3. 多层加分机制：
-     - 精确关键词命中：+1.0 分
-     - 宽泛关键词命中 2 个：+0.5 分
-     - 宽泛关键词命中 3 个：+1.0 分
-  4. 智能去重：RG 结果优先，chunk 与 RG 内容重叠时自动过滤
-- **性能评估**：速度快数倍，准确度达 agentic_search 的 90%，具有较强容错能力
-- **适用场景**：快速查询、资源受限环境、对响应速度要求高的场景
-
-### agentic_search - 目录增强版本
-
-**前提条件：** 需要 `menu.json` 目录文件
-
-**运行：**
-```bash
-python agentic_search.py
-```
-
-**自定义查询：**
-```python
-run_agentic_search("基础的宽高比")
-```
-
-**特点：**
-- 通过目录树直接定位章节
-- 自动配对正文和条文解释
-- 精准章节切片
-- 模糊文件名匹配
-
-
-
-## 📚 版本演进历史
-
-<details>
-<summary>点击展开完整版本对比</summary>
-
-### V1 - 基础版本
-- 单模型处理：正则生成 → 检索 → 全量扩展 → 回答
-- 适用：概念验证
-
-### V2 - 通用优化版本
-- 快慢模型分离 + 正则自我修复 + 智能初筛
-- 适用：通用文本库，单条文答案
-
-### V3 - 循环搜索版本
-- 混合智能展卷（规则引擎 + LLM 兜底）
-- 多轮迭代 + 外部引用检测
-- 适用：多表格、多条文交叉引用
-
-### V4 - 打分制版本
-- 0-10 分打分 + 三池分流（精选/垃圾/候选）
-- 动态截断 + 场景分类策略
-- **痛点**：Token 消耗高，易误判关键跳转线索
-
-### V5 - 原生 Agent 版本 🚀
-- 废弃所有人工规则，回归 ReAct 范式
-- 两个原子工具：`execute_grep` + `read_file_range`
-- 大模型自主调度，零成本文件过滤
-- **优势**：成本降低 70%，准确度提升，逻辑严密
-
-### V6 - TOC 预加载实验版本 🗂️
-- 启动前自动生成或读取总目录 `index.json`
-- 将总目录直接注入上下文，按需读取单文件详细目录
-- 章节上下文注入：每个搜索结果自动注入章节路径和本章小节列表
-- 智能消重机制：多轮搜索自动过滤重复内容
-- **性能评估**：相较 V5，稳健提升约 10%，虽非根本性突破但更加可靠
-
-### V6a - V6 精简等效版本 ⚡
-- V6 的等效版本，代码极为精简
-- 功能与性能与 V6 完全一致
-- 便于理解和二次开发
-
-### Fast - 快速检索版本 🏃
-- 基于 LLM Function Call + BM25 排序的简化架构
-- 两步流程：生成关键词 + RG 搜索 → 生成答案
-- **v2 重大改进**：
-  1. 智能文件定位：LLM 预判最可能包含答案的文件，对这些文件进行切片处理
-  2. 双路召回策略：RG 关键词搜索 + 文件切片 BM25 排序，完美避免关键词错写/简写问题
-  3. 多层加分机制：精确关键词命中（+1.0），宽泛关键词命中 2 个（+0.5），3 个（+1.0）
-  4. 智能去重：RG 结果优先，chunk 与 RG 内容重叠时自动过滤
-- **性能评估**：速度快数倍，准确度达 agentic_search 的 90%，具有较强容错能力
-- **适用场景**：快速查询、资源受限环境、对响应速度要求高的场景
-
-### agentic_search - 目录增强版本 📚
-- 目录树路由 + 自动配对条文解释
-- 模糊文件匹配 + 精准章节切片
-- **前提**：需要 menu.json 目录文件
-
-</details>
+1. **阶段 1 · 快速取证**：v1 执行 fast 第 1 轮工具搜索；v2 执行 v2c 全局预览 + 文件内 BM25 取证
+2. **阶段 2 · 完整性评估**：将证据截断至 2000 字，让 LLM 只回答 YES/NO 判断是否足以作答（评估失败默认转深挖）
+3. **阶段 3a · 直接作答**：评估通过则基于证据流式生成终稿（等价于 fast 第 2 轮）
+3. **阶段 3b · 深度兜底**：不通过则转 Agentic 模式（v1→v6a，v2→v6b）多轮深挖
 
 ---
 
-## 🎬 示例输出
+## 🌐 Web 服务说明（server.py / server_v2.py）
 
-### V5 原生 Agent 版本
+两个服务的 HTTP/WebSocket 接口一致，仅绑定的检索栈不同。
 
-```
-🚀 启动 V5 Agent (已加载 16 个文件) | 问题: 钢柱的长细比要求
-============================================================
+### WebSocket `/ws/query`
 
-[第 1 轮]
-🛠️ [Tool: Grep] 搜索: '钢柱.*长细比' (范围: 限定于 2 个文件: ['5钢结构设计标准[附条文说明].txt', '钢结构通用规范.txt'])
-      📊 [Grep 统计] 命中行数: 12
+请求：
 
-[第 2 轮]
-📖 [Tool: Read] 阅读: 5钢结构设计标准[附条文说明].txt (行 1234-1250)
-
-✅ [最终回答]:
-根据《钢结构设计标准》GB 50017-2017 第 5.3.8 条规定：
-1. 轴心受压构件的长细比不宜超过 150
-2. 受拉构件的长细比不宜超过 350
-...（详细引用原文）
+```json
+{
+  "question": "筏板的最小厚度",
+  "folder_path": "specs",
+  "model_num": 8,
+  "context_lines": 10,
+  "thinking_enabled": false,
+  "mode": "agentic",          // agentic | fast | hybrid
+  "extract_references": true
+}
 ```
 
-### agentic_search 目录增强版本
+推送事件类型：`turn`（轮次）、`tool_call` / `tool_result`（工具调用与摘要）、`thinking_chunk` / `thinking_complete`（思考流）、`stream_chunk`（回答流）、`final_answer`、`references`（结构化依据）、`error`。
 
-```
-🙋 用户问题：基础的宽高比
-============================================================
-🧠 [阶段1] 正在翻阅全库总目录...
-🎯 锁定到 6 个候选章节（已自动配对条文解释）：
-   1. 📚《建筑与市政地基基础通用规范》 🔖 [6.3 筏形基础设计]
-   2. 📚《建筑与市政地基基础通用规范》 🔖 [(条文解释)6.3 筏形基础设计]  ← 自动配对
-   ...
+### HTTP API
 
-✅ 截取成功！共纳入 6 个章节片段（包含正文 + 条文解释）。
-
-🤖 Ai 回答: 根据《建筑地基基础设计规范》8.4.2 条规定...
-同时，条文解释进一步说明了该规定的背景和适用条件...
-```
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/set-folder` | 设置工作资料库文件夹（切换后清理缓存） |
+| POST | `/api/set-model` | 切换模型序号与思考开关（运行时生效） |
+| GET | `/api/models` | 列出 `model_config.py` 全部模型及思考能力 |
+| POST / GET | `/api/set-context-lines` `/api/context-lines` | 设置/读取搜索上下文行数（0–50） |
+| GET | `/api/folders` | 浏览可选文件夹 |
+| GET | `/api/index-status` | 查询某文件夹的索引状态 |
+| POST | `/api/index-folder` | 触发 `extract_toc` 生成目录索引 |
+| POST | `/api/read-file-range` | 按文件名（支持模糊）读取行范围原文 |
+| GET / POST / DELETE | `/api/history` | 历史记录增删查（保留最近 100 条，存于 `history.json`） |
+| DELETE | `/api/history/{item_id}` | 删除单条历史 |
+| POST | `/api/history/match` | 相似问题匹配（difflib + 中文 2-gram Jaccard，阈值默认 0.78） |
 
 ---
 
-## ⚙️ 核心技术
+## ⚙️ 核心技术要点
 
-### V5 / V6 的当前认识
+- **模型配置**（`model_config.py`）：以序号选择 OpenAI-compatible 端点；`build_chat_kwargs()` 按厂商适配思考模式开关（kimi：`extra_body={"thinking":{"type":"disabled"}}` 且关闭思考时 temperature 固定 0.6；qwen：`enable_thinking`；deepseek：`thinking.enabled/disabled`），并兼容部分模型流式末尾 `choices=[]` 的边界情况
+- **BM25 模块**：`bm25_module` 为编译好的 `.pyd` 扩展，fast 系列依赖它完成召回排序
+- **TOC 索引**：`extract_toc.scanner.scan_folder` 生成 `index.json`（全局）与 `{stem}.index.json`（单文件章节），用于目录注入与 `get_chapter_context` 章节出处推断
+- **rg 解析容错**：从右往左定位纯数字行号段解析 `file:line:content`，兼容 Windows 盘符路径含冒号的情况
+- **缓存策略**：目录详情、搜索去重键、全局 chunk、预览条目均有模块级缓存；Web 端切换文件夹时统一清理
 
-### V5 / V6 / Fast 的当前认识
+## 🧭 版本选择建议
 
-**V5 的特点**
-- 原子化工具简单：`execute_grep` + `read_file_range`
-- 大模型通常能直接形成"搜索 → 阅读 → 回答"的短路径
-- 整体表现稳定可靠
-
-**V6 的改进**
-- 启动前准备好总目录 `index.json`
-- 章节上下文注入：每个搜索结果自动注入章节路径和本章小节列表
-- 智能消重机制：多轮搜索自动过滤重复内容
-- 按需读取某个文件的详细目录 JSON，再配合正文阅读
-- **性能提升**：相比 V5 稳健提升约 10%，虽非根本性突破但更加可靠
-
-**V6a 的定位**
-- V6 的等效版本，代码极为精简
-- 功能与性能与 V6 完全一致
-- 便于理解核心逻辑和二次开发
-
-**Fast 的创新**
-- 简化架构：两步流程（生成关键词 + 搜索后bm25及关键词综合排序 → 生成答案）
-- 宽泛搜索词限定小范围 BM25 排序，提升准确率和即时性
-- 多层加分机制：
-  - 精确关键词命中：+1.0 分
-  - 宽泛关键词命中 2 个：+0.5 分
-  - 宽泛关键词命中 3 个：+1.0 分
-- **性能评估**：速度快数倍，性能达 V6 的 80%
-- **适用场景**：快速查询、资源受限环境
-
-**当前推荐**
-- 追求稳定性和准确性：V6 / V6a（相比 V5 提升 10%）
-- 追求速度和效率：Fast v2（速度快数倍，准确度 90%，强容错）
-- 基础稳定版本：V5（原生 Agent，整体最稳）
-
----
+| 场景 | 推荐 |
+|---|---|
+| 追求答案全面性、允许较多轮次 | **Agentic v6b**（补充扫描防遗漏，容错最强） |
+| 追求响应速度、问题术语明确 | **Fast v2c**（两次调用固定流程，最快） |
+| 生产环境兼顾速度与质量 | **Hybrid v2**（够则秒答，不够自动转深挖） |
 
 ## 📝 注意事项
 
-1. V5 / V6 / V6a / Fast 需要模型支持 Function Calling（推荐 Kimi、Qwen-Max）
-2. V6 / V6a 依赖 `extract_toc` 生成 `index.json` 和单文件详细目录
-3. Fast v2 需要 `bm25_module` 模块支持
-4. agentic_search 需要提供 `menu.json` 目录文件
-5. 规范文件建议使用 UTF-8 编码
-6. Windows 用户确保 `rg.exe` 在项目目录
-7. API Key 需要有足够的调用额度
-8. server_v6a.py 已同步更新，支持 Fast v2 模式的 WebSocket 查询
+1. 各脚本内通过 `num = ...` / `MODEL_NUM = ...` 选择默认模型，Web 端可在运行时通过 `/api/set-model` 或请求参数覆盖
+2. Agentic 与 Fast 模式均要求模型支持 Function Calling
+3. Fast 系列需要 `bm25_module` 对应 Python 版本的 `.pyd`
+4. 规范文件建议 UTF-8 编码，Windows 用户确保 `rg.exe` 在项目根目录或已加入 PATH
+5. `server*.py` 默认监听 `0.0.0.0:5000`
 
----
-## 🚀 接着要做的事
-1. 所有内容流式输出 ✅（已完成）
-2. server 简化，v6a 和 fast agent 函数添加 ws 输出部分，供前端调用避免 server 和基本函数两套代码维护 ✅（已完成）
 ---
 
 ## 📄 许可证
