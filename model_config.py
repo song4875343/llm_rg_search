@@ -71,9 +71,9 @@ MODEL_CONFIG = {
         "thinking": "kimi",
     },
     13: {
-        "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "api_key": "ZHIPU_API_KEY",
-        "model_name": "glm-4.7-flash",
-        "thinking": "kimi",
+        "base_url": "https://opencode.ai/zen/go/v1",
+        "api_key": "OPENCODE_API_KEY",
+        "model_name": "deepseek-v4-flash",
+        "thinking": "deepseek",
     },
 }
