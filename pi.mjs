@@ -1,5 +1,12 @@
 // pi.mjs — 最简演示：4号模型 + pi 默认工具集（bash/read/edit/write 等），工作目录 specs/
-// 运行：node --env-file=.env pi.mjs "筏板的最小厚度"
+// 运行：node pi.mjs "筏板的最小厚度"
+import { readFileSync } from "node:fs";
+
+for (const line of readFileSync(new URL("./.env", import.meta.url), "utf8").split("\n")) {
+  const m = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+  if (m && !(m[1] in process.env)) process.env[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "");
+}
+
 import { Agent } from "@earendil-works/pi-agent-core";
 import { createModels, createProvider, envApiKeyAuth } from "@earendil-works/pi-ai";
 import * as openAICompletionsApi from "@earendil-works/pi-ai/api/openai-completions";
