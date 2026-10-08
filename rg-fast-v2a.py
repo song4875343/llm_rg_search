@@ -7,7 +7,7 @@ import os, json, subprocess, re, bisect, sys
 from openai import OpenAI
 from dotenv import load_dotenv
 from bm25_module import BM25
-from model_config import MODEL_CONFIG
+from model_config import MODEL_CONFIG, build_default_headers
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -18,7 +18,11 @@ load_dotenv()
 MODEL_NUM = 8
 THINKING_ENABLED = False
 config = MODEL_CONFIG[MODEL_NUM]
-client = OpenAI(base_url=config["base_url"], api_key=os.getenv(config["api_key"]))
+client = OpenAI(
+    base_url=config["base_url"],
+    api_key=os.getenv(config["api_key"]),
+    default_headers=build_default_headers(config),
+)
 model_name = config["model_name"]
 
 print(f"🤖 使用模型: {model_name}，序号{MODEL_NUM}")

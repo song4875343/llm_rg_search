@@ -7,6 +7,8 @@ import difflib  # 新增：用于模糊匹配文件名
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from model_config import build_default_headers
+
 # 加载环境变量
 load_dotenv()
 
@@ -19,6 +21,7 @@ model_dict={1:{'factory_name':'kimi','base_url':'https://api.moonshot.cn/v1','ap
 client = OpenAI(
     base_url = model_dict[index]['base_url'],
     api_key=os.getenv(model_dict[index]['api_key']),
+    default_headers=build_default_headers(model_dict[index]),
 )
 
 

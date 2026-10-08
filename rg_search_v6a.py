@@ -7,7 +7,7 @@ from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
 from extract_toc.scanner import scan_folder
-from model_config import MODEL_CONFIG as MODEL_DICT
+from model_config import MODEL_CONFIG as MODEL_DICT, build_default_headers
 
 load_dotenv()
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -181,6 +181,7 @@ def get_client():
         CLIENT = OpenAI(
             base_url=MODEL_DICT[num]["base_url"],
             api_key=os.getenv(MODEL_DICT[num]["api_key"]),
+            default_headers=build_default_headers(MODEL_DICT[num]),
         )
     return CLIENT
 

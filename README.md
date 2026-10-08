@@ -173,6 +173,8 @@ python hybrid_search_v2.py
 ## ⚙️ 核心技术要点
 
 - **模型配置**（`model_config.py`）：以序号选择 OpenAI-compatible 端点；`build_chat_kwargs()` 按厂商适配思考模式开关（kimi：`extra_body={"thinking":{"type":"disabled"}}` 且关闭思考时 temperature 固定 0.6；qwen：`enable_thinking`；deepseek：`thinking.enabled/disabled`），并兼容部分模型流式末尾 `choices=[]` 的边界情况
+- **请求头适配**（`build_default_headers()`）：所有 OpenAI 客户端统一发送自定义 `User-Agent`；对 OpenCode Go（`opencode.ai`）端点额外携带稳定的 `x-opencode-session`（进程内缓存 UUID），满足其按会话路由与提示缓存的要求，避免 `400 MissingSessionID`
+- **模型可用性**：ModelScope 等平台的在线推理模型会动态上下架（如 `Qwen/Qwen3-*-Instruct-2507` 已下线），若返回 `has no provider supported` 请在 `model_config.py` 中改用当前可用模型
 - **BM25 模块**：`bm25_module` 为编译好的 `.pyd` 扩展，fast 系列依赖它完成召回排序
 - **TOC 索引**：`extract_toc.scanner.scan_folder` 生成 `index.json`（全局）与 `{stem}.index.json`（单文件章节），用于目录注入与 `get_chapter_context` 章节出处推断
 - **rg 解析容错**：从右往左定位纯数字行号段解析 `file:line:content`，兼容 Windows 盘符路径含冒号的情况

@@ -1,5 +1,25 @@
 """模型配置模块 - 统一管理所有LLM模型配置"""
 
+import uuid
+
+_SESSION_CACHE = {}
+
+
+def build_default_headers(config):
+    """生成供应商所需的默认请求头。
+
+    OpenCode Go 要求每次会话携带稳定的 x-opencode-session，
+    并要求客户端用自定义 User-Agent 标识自己。
+    """
+    headers = {"User-Agent": "llm-rg-search/1.0"}
+    base_url = config.get("base_url", "")
+    if "opencode.ai" in base_url:
+        headers["x-opencode-session"] = _SESSION_CACHE.setdefault(
+            base_url, uuid.uuid4().hex
+        )
+    return headers
+
+
 MODEL_CONFIG = {
     1: {
         "base_url": "https://api.moonshot.cn/v1",
@@ -15,7 +35,7 @@ MODEL_CONFIG = {
     3: {
         "base_url": "https://api-inference.modelscope.cn/v1",
         "api_key": "modelscope_key",
-        "model_name": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "model_name": "Qwen/Qwen3.5-122B-A10B",
         "thinking": "qwen",
     },
     4: {
@@ -27,7 +47,7 @@ MODEL_CONFIG = {
     5: {
         "base_url": "https://api-inference.modelscope.cn/v1",
         "api_key": "modelscope_key",
-        "model_name": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "model_name": "Qwen/Qwen3.5-35B-A3B",
         "thinking": "qwen",
     },
     6: {
@@ -73,7 +93,7 @@ MODEL_CONFIG = {
     13: {
         "base_url": "https://opencode.ai/zen/go/v1",
         "api_key": "OPENCODE_API_KEY",
-        "model_name": "deepseek-v4-flash",
+        "model_name": "deepseek-v4.1-flash",
         "thinking": "deepseek",
     },
 }
